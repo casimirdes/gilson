@@ -111,7 +111,7 @@ int32_t gilson_encode_end(uint32_t *crc);
 int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo);
 int32_t gilson_decode_valid(const uint8_t *pack);
 int32_t gilson_decode_data(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
-int32_t gilson_decode_dataKV(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, char *nome_chave, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
+int32_t gilson_decode_dataKV(const uint8_t chave, char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
 int32_t gilson_decode_data_full(const uint8_t chave, uint8_t *valor);
 int32_t gilson_decode_dataKV_full(const uint8_t chave, char *nome_chave, uint8_t *valor);
 int32_t gilson_decode(const uint8_t chave, ...);

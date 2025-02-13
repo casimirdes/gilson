@@ -1075,7 +1075,7 @@ int32_t gilson_decode_data(const uint8_t chave, const uint8_t tipo1, const uint8
 	return gilson_decode_data_base(chave, temp, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
-int32_t gilson_decode_dataKV(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, char *nome_chave, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
+int32_t gilson_decode_dataKV(const uint8_t chave, char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
 	return gilson_decode_data_base(chave, nome_chave, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step);
 }
@@ -1346,6 +1346,78 @@ int32_t gilson_decode_dataKV_full(const uint8_t chave, char *nome_chave, uint8_t
 
 int32_t gilson_decode(const uint8_t chave, ...)
 {
-	// fazerrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
-	return 0;
+	//int32_t erro=0;
+	uint16_t cont_list_a=0, cont_list_b=0, cont_list_step=0;
+	//uint16_t i, vezes = 1, nbytes = 1, temp16;
+	uint8_t tipo1=255, tipo2=255, modokv=0, modofull=1;
+	uint8_t *valor;
+	char *nome_chave = {"\0"};
+	va_list argptr;
+
+	va_start(argptr, chave);  // tipo1
+
+	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	{
+		nome_chave = va_arg(argptr, char *);
+		modokv = 1;
+	}
+
+	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
+	{
+		tipo1 = (uint8_t)va_arg(argptr, int);
+		tipo2 = (uint8_t)va_arg(argptr, int);
+		modofull = 0;
+	}
+
+	valor = va_arg(argptr, uint8_t *);
+
+	if(modofull==0)
+	{
+		if(tipo1 == GSON_SINGLE)
+		{
+			if(tipo2 == GSON_tSTRING)
+			{
+				// erro = gilson_encode_data(0, GSON_SINGLE, GSON_tSTRING, CAST_GIL chapa.sensor, 16, 0, 0);  // "sensor"
+				// erro = gilson_encode_dataKV(0, GSON_SINGLE, GSON_tSTRING, "sensor", CAST_GIL chapa.sensor, 16, 0, 0);  // "sensor"
+
+				cont_list_a = (uint16_t)va_arg(argptr, int);
+			}
+		}
+		else if(tipo1 == GSON_LIST)
+		{
+			cont_list_a = (uint16_t)va_arg(argptr, int);
+			if(tipo2 == GSON_tSTRING)
+			{
+				// erro = gilson_encode_data(2, GSON_LIST, GSON_tSTRING, CAST_GIL chapa.operadores, 2, 40, 0);  // "operadores"
+				// erro = gilson_encode_dataKV(2, GSON_LIST, GSON_tSTRING, "operadores", CAST_GIL chapa.operadores, 2, 40, 0);  // "operadores"
+
+				cont_list_b = (uint16_t)va_arg(argptr, int);
+			}
+		}
+		else if(tipo1 == GSON_MTX2D)
+		{
+			// erro = gilson_encode_data(13, GSON_MTX2D, GSON_tFLOAT32, CAST_GIL chapa.acc, 2, 3, 3);  // "acc"
+			// erro = gilson_encode_dataKV(13, GSON_MTX2D, GSON_tFLOAT32, "acc", CAST_GIL chapa.acc, 2, 3, 3);  // "acc"
+
+			cont_list_a = (uint16_t)va_arg(argptr, int);
+			cont_list_b = (uint16_t)va_arg(argptr, int);
+			cont_list_step = (uint16_t)va_arg(argptr, int);
+		}
+		else
+		{
+			// erro
+		}
+	}
+
+	va_end(argptr);
+
+
+	if(modofull==0)
+	{
+		return gilson_decode_data_base(chave, nome_chave, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step);
+	}
+	else
+	{
+		return gilson_decode_data_full_base(chave, nome_chave, valor);
+	}
 }
