@@ -105,7 +105,7 @@ enum e_erros_GILSON
 int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t size_max_pack);
 int32_t gilson_encode_data(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
 int32_t gilson_encode_dataKV(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, char *nome_chave, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
-int32_t gilson_encode(const uint8_t chave, const uint8_t tipo, ...);
+int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, ...);
 int32_t gilson_encode_end(uint32_t *crc);
 
 int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo);
