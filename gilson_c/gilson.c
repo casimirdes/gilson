@@ -3,8 +3,8 @@
  ============================================================================
  Name			: gilson.c
  Author			: mjm
- Version		: 0.3
- Date			: 18/01/25
+ Version		: 0.31
+ Date			: 12/04/25
  Description : biblioteca 'gilson'
  ============================================================================
  */
@@ -431,7 +431,7 @@ int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_chave, con
 		for(i=0; i<vezes; i++)
 		{
 			// OBS: é obrigado ter o 'len_string_max' que é o valor de 'cont_list_b'!!!!!!!!!!!!
-
+			memset(buff, 0x00, sizeof(buff));  // limpeza pra evitar lixos antigos
 			memcpy(buff, valor+(i*len_string_max), len_string_max);
 			len = strlen(buff);  // vai esbarrar no primero '\0' que encontrar...
 			// problema é com a codificação utf-8 que se formos truncar tem que cuidar onde truncar...
@@ -440,7 +440,9 @@ int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_chave, con
 
 			if(len>=len_string_max)
 			{
-				// nao temos '\0'???? caso len==len_string_max
+				// nao temos '\0'???? caso len==len_string_max, string ta no limite!!!
+
+				/*
 				len = len_string_max;
 				buff[len-1] = 0;  // para garantir o '\0'
 				if(buff[len-2]>0 && (buff[len-2]<32 || buff[len-2]>126))  // tabela ascii, se caso ficou bugado em um utf-8
@@ -448,6 +450,18 @@ int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_chave, con
 					buff[len-2] = 0;
 				}
 				len = strlen(buff);  // atualiza os ajustes
+				*/
+
+				// vamos ver se temos um caso de utf-8 no ultimo byte...
+				if(buff[len-1]>0 && (buff[len-1]<32 || buff[len-1]>126))  // tabela ascii, se caso ficou bugado em um utf-8
+				{
+					buff[len-1] = 0;
+					if(buff[len-2]>0 && (buff[len-2]<32 || buff[len-2]>126))  // tabela ascii, se caso ficou bugado em um utf-8
+					{
+						buff[len-2] = 0;
+					}
+					len = strlen(buff);  // atualiza os ajustes
+				}
 			}
 
 			if(len<=255)
