@@ -3,8 +3,8 @@
  ============================================================================
  Name			: gilson.h
  Author			: mjm
- Version		: 0.4
- Date			: 04/05/25
+ Version		: 0.5
+ Date			: 24/05/25
  Description : biblioteca 'gilson'
  ============================================================================
  */
@@ -131,11 +131,14 @@ enum e_erros_GILSON
 
 // parte de encode ======================================================
 int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t size_max_pack);
-int32_t gilson_encode_data(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
-int32_t gilson_encode_dataKV(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, char *nome_chave, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
+int32_t gilson_encode_data(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, const uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
+int32_t gilson_encode_dataKV(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, char *nome_chave, const uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
 int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, ...);
+int32_t gilson_encode_mapfix(const uint16_t *map, ...);
+int32_t gilson_encode_mapdin(const uint16_t *map, ...);
 int32_t gilson_encode_end(uint32_t *crc);
 
+// encode lista dinâmica "dl"
 int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const uint8_t nitens);
 int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
 int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step);
@@ -150,10 +153,13 @@ int32_t gilson_decode_dataKV(const uint8_t chave, char *nome_chave, const uint8_
 int32_t gilson_decode_data_full(const uint8_t chave, uint8_t *valor);
 int32_t gilson_decode_dataKV_full(const uint8_t chave, char *nome_chave, uint8_t *valor);
 int32_t gilson_decode(const uint8_t chave, ...);
+int32_t gilson_decode_mapfix(const uint16_t *map, ...);
+int32_t gilson_decode_mapdin(const uint16_t *map, ...);
 int32_t gilson_decode_end(uint32_t *crc);
 
+// decode lista dinâmica "dl"
 int32_t gilson_decode_dl_init(const uint8_t chave);
-int32_t gilson_decode_dl(const uint8_t item, uint8_t *valor);
+int32_t gilson_decode_dl_data(const uint8_t item, uint8_t *valor);
 int32_t gilson_decode_dl_end(void);
 
 #endif /* GILSON_H_ */
