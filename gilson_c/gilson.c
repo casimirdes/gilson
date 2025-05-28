@@ -215,7 +215,7 @@ int32_t gilson_encode_end(uint32_t *crc)
 
 
 // colocar sempre o "(uint8_t *)" na frente da variavel de entrada 'multi_data' e passar como "&"
-int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, const uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
+static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, const uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
 	int32_t erro=erGSON_OK, len=0;  // check
 	uint16_t i, vezes = 1, nbytes = 1, temp16, pos_bytes_check=0;
@@ -1287,7 +1287,7 @@ int32_t gilson_decode_end(uint32_t *crc)
 
 
 // colocar sempre o "(uint8_t *)" na frente da variavel de entrada 'multi_data' e passar como "&"
-int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
+static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
 	int32_t erro=erGSON_OK, len;
 	uint16_t i, vezes = 1, nbytes=1, temp16;
@@ -1501,7 +1501,7 @@ int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, const uin
 
 int32_t gilson_decode_data(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[4];
+	char temp[4];  // dummy
 	return gilson_decode_data_base(chave, temp, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
@@ -1512,7 +1512,7 @@ int32_t gilson_decode_dataKV(const uint8_t chave, char *nome_chave, const uint8_
 
 
 // só funciona para modo 'GSON_MODO_FULL'!!!!
-int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chave, uint8_t *valor)
+static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chave, uint8_t *valor)
 {
 	int32_t erro=erGSON_OK, len;
 	uint16_t i, vezes = 1, cont_list_a=0, cont_list_b=0, cont_list_step=0, nbytes=1, temp16, pos_bytes;  // j, init
