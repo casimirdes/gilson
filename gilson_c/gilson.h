@@ -3,8 +3,8 @@
  ============================================================================
  Name			: gilson.h
  Author			: mjm
- Version		: 0.5
- Date			: 24/05/25
+ Version		: 0.51
+ Date			: 01/06/25
  Description : biblioteca 'gilson'
  ============================================================================
  */
@@ -126,6 +126,13 @@ enum e_erros_GILSON
 	erGSON_64,
 	erGSON_65,
 	erGSON_66,
+	erGSON_67,
+	erGSON_68,
+	erGSON_69,
+	erGSON_70,
+	erGSON_71,
+	erGSON_72,
+	erGSON_73,
 };
 
 
@@ -136,7 +143,8 @@ int32_t gilson_encode_dataKV(const uint8_t chave, const uint8_t tipo1, const uin
 int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, ...);
 int32_t gilson_encode_mapfix(const uint16_t *map, ...);
 int32_t gilson_encode_mapdin(const uint16_t *map, ...);
-int32_t gilson_encode_end(uint32_t *crc);
+int32_t gilson_encode_end(void);
+int32_t gilson_encode_end_crc(uint32_t *crc);
 
 // encode lista dinâmica "dl"
 int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const uint8_t nitens);
@@ -155,7 +163,8 @@ int32_t gilson_decode_dataKV_full(const uint8_t chave, char *nome_chave, uint8_t
 int32_t gilson_decode(const uint8_t chave, ...);
 int32_t gilson_decode_mapfix(const uint16_t *map, ...);
 int32_t gilson_decode_mapdin(const uint16_t *map, ...);
-int32_t gilson_decode_end(uint32_t *crc);
+int32_t gilson_decode_end(void);
+int32_t gilson_decode_end_crc(uint32_t *crc);
 
 // decode lista dinâmica "dl"
 int32_t gilson_decode_dl_init(const uint8_t chave);

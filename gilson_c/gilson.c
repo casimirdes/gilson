@@ -3,8 +3,8 @@
  ============================================================================
  Name			: gilson.c
  Author			: mjm
- Version		: 0.5
- Date			: 24/05/25
+ Version		: 0.51
+ Date			: 01/06/25
  Description : biblioteca 'gilson'
  ============================================================================
  */
@@ -157,7 +157,58 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 }
 
 
-int32_t gilson_encode_end(uint32_t *crc)
+int32_t gilson_encode_end(void)
+{
+	int32_t erro=erGSON_OK;
+	s_gil[ig].crc=0;
+
+	// 8 bytes de offset geral:
+	// [0] 1b = modo
+	// [1:4] 4b = crc pacote (crc32)
+	// [5:6] 2b = tamanho pacote (até 65355 bytes)
+	// [7] 1b = quantos elementos geral (nao soma as listas, trata como 1) até 255 elementos/itens
+	// [8::] data
+
+	if(s_gil[ig].erro != erGSON_OK)
+	{
+		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		s_gil[ig].pos_bytes = 0;  // pra garantir que não deu nada...
+	}
+	else
+	{
+		s_gil[ig].bufw[0] = s_gil[ig].modo;
+
+		if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+		{
+			memcpy(&s_gil[ig].bufw[5], &s_gil[ig].pos_bytes, 2);
+			s_gil[ig].bufw[7] = s_gil[ig].cont_itens;
+
+			s_gil[ig].crc = gil_crc(0xffffffff, &s_gil[ig].bufw[5], s_gil[ig].pos_bytes-5);
+
+			memcpy(&s_gil[ig].bufw[1], &s_gil[ig].crc, 4);
+		}
+	}
+
+#if (USO_DEBUG_LIB==1)
+	printf("DEBUG gilson_encode_end::: erro:%i, ig:%u, modo:%u pos_bytes:%u cont_itens:%u crc:%u cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
+#endif
+
+	s_gil[ig].ativo = 0;
+
+	if(ig==1)
+	{
+		ig = 0;  // volta para o primeiro, pois está aberto!!!
+		return s_gil[ig+1].pos_bytes;
+	}
+	else
+	{
+		return s_gil[ig].pos_bytes;
+	}
+}
+
+
+// calcula e retorna crc independente do 'modo'
+int32_t gilson_encode_end_crc(uint32_t *crc)
 {
 	int32_t erro=erGSON_OK;
 	s_gil[ig].crc=0;
@@ -194,7 +245,7 @@ int32_t gilson_encode_end(uint32_t *crc)
 	}
 
 #if (USO_DEBUG_LIB==1)
-	printf("DEBUG gilson_encode_end::: erro:%i, ig:%u, modo:%u pos_bytes:%u cont_itens:%u crc:%u cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
+	printf("DEBUG gilson_encode_end_crc::: erro:%i, ig:%u, modo:%u pos_bytes:%u cont_itens:%u crc:%u cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
 #endif
 
 	s_gil[ig].ativo = 0;
@@ -211,7 +262,6 @@ int32_t gilson_encode_end(uint32_t *crc)
 		return s_gil[ig].pos_bytes;
 	}
 }
-
 
 
 // colocar sempre o "(uint8_t *)" na frente da variavel de entrada 'multi_data' e passar como "&"
@@ -1226,7 +1276,65 @@ int32_t gilson_decode_valid(const uint8_t *pack)
 }
 
 
-int32_t gilson_decode_end(uint32_t *crc)
+int32_t gilson_decode_end(void)
+{
+	int32_t erro=erGSON_OK;
+
+	if(s_gil[ig].erro != erGSON_OK)
+	{
+		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		goto deu_erro;
+	}
+
+	if(s_gil[ig].modo == GSON_MODO_ZIP || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	{
+		s_gil[ig].crc_out = 0;  // gil_crc(0xffffffff, s_gil[ig].bufr, s_gil[ig].pos_bytes);
+	}
+	else  // outros modos
+	{
+		// 's_gil[ig].crc_out' ja foi calculado em 'gilson_decode_init()'
+		if(s_gil[ig].cont_itens == s_gil[ig].cont_itens2 && s_gil[ig].pos_bytes != s_gil[ig].pos_bytes2)
+		{
+			// chegou até o fim 'cont_itens2' mas o 'pos_bytes' nao bateu com o 'pos_bytes2', dai deu ruim
+			erro = erGSON_20;
+		}
+		else
+		{
+			// indica que nao leu todas chaves ou nao foi até a última ou nao veu em ordem até o fim
+			s_gil[ig].pos_bytes = s_gil[ig].pos_bytes2;
+			s_gil[ig].cont_itens = s_gil[ig].cont_itens2;
+		}
+	}
+
+	s_gil[ig].ativo = 0;
+
+	deu_erro:
+
+#if (USO_DEBUG_LIB==1)
+	printf("DEBUG gilson_decode_end::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
+#endif
+
+	if(erro==erGSON_OK)
+	{
+		if(ig==1)
+		{
+			ig = 0;  // volta para o primeiro, pois está aberto!!!
+			return s_gil[ig+1].pos_bytes;
+		}
+		else
+		{
+			return s_gil[ig].pos_bytes;
+		}
+	}
+	else
+	{
+		s_gil[ig].erro = erro;
+		return erro;
+	}
+}
+
+
+int32_t gilson_decode_end_crc(uint32_t *crc)
 {
 	int32_t erro=erGSON_OK;
 
@@ -1263,7 +1371,7 @@ int32_t gilson_decode_end(uint32_t *crc)
 	deu_erro:
 
 #if (USO_DEBUG_LIB==1)
-	printf("DEBUG gilson_decode_end::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
+	printf("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
 #endif
 
 	if(erro==erGSON_OK)
@@ -2279,5 +2387,4 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 		return gilson_decode_data_full_base(chave, nome_chave, valor);
 	}
 }
-
 
