@@ -1,13 +1,10 @@
-
 /*
- ============================================================================
- Name			: gilson.c
- Author			: mjm
- Version		: 0.51
- Date			: 01/06/25
- Description : biblioteca 'gilson'
- ============================================================================
+ * gilson.c
+ *
+ *  Created on: 30 de out. de 2024
+ *      Author: mella
  */
+
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -21,9 +18,9 @@
 
 #include "gilson.h"
 
-#define USO_DEBUG_LIB		0  // 0=microcontrolador, 1=PC
+#define USO_DEBUG_LIB		0  // ativa os prints debug, mais dedicado a PC
 
-#define SIZE_TYPE_RAM		uint64_t  // como a RAM é 'medida/vista' no sistema: uint8_t, uint16_t, uint32_t, uint64_t
+#define SIZE_TYPE_RAM		uint64_t  // como a RAM é 'medida/vista' no sistema: uint8_t, uint16_t, uint32_t, uint64_t, (ex.: PC de 64bits = uint64_t)
 
 #define LEN_PACKS_GILSON	2  // 2 pacotes manipulaveis "ao mesmo tempo", se abriu o segundo tem que fechar para voltar para o primeiro!!!
 
@@ -33,6 +30,7 @@
 #define LEN_MAX_CHAVE_NOME	16  // tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GSON_MODO_KV'
 
 #define TIPO_GSON_LDIN		0b11100000  // lista dinâmica de dados de diversos tipos, limitado até 255 tipos e nao pode ter lista de lista
+#define TIPO_GSON_NULL		0b11111111  // quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem nao terá dados
 
 // estrutura de controle da lib gilson
 typedef struct {
@@ -47,6 +45,7 @@ typedef struct {
 	uint8_t cont_itens, cont_itens2, cont_itens_old;
 	uint8_t chave_atual;  // para fins de comparar e validar chaves durante encode
 	uint8_t tipo_dinamico, tam_list, nitens, tam_list2, nitens2, chave_dl;  // 0=nao trata, 1=está tratando desse tipo
+	uint8_t chaves_null;  // até 255 chaves nulas, meio improvável...
 	uint8_t *bufw;  // buffer de escrita/leitura
 	const uint8_t *bufr;  // buffer somente leitura
 }struct_gilson;
@@ -149,7 +148,7 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 	s_gil[ig].erro = erro;
 
 #if (USO_DEBUG_LIB==1)
-	printf("DEBUG gilson_encode_init::: ig:%u, erro:%i, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
+	printf("DEBUG gilson_encode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
 #endif
 
 	s_gil[ig].ativo = 1;  // ativa a estrutura 'ig' da vez!!!
@@ -190,7 +189,7 @@ int32_t gilson_encode_end(void)
 	}
 
 #if (USO_DEBUG_LIB==1)
-	printf("DEBUG gilson_encode_end::: erro:%i, ig:%u, modo:%u pos_bytes:%u cont_itens:%u crc:%u cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
+	printf("DEBUG gilson_encode_end::: erro:%i, ig:%u, end_ram:%X, modo:%u pos_bytes:%u cont_itens:%u crc:%u cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
 #endif
 
 	s_gil[ig].ativo = 0;
@@ -284,11 +283,24 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 		goto deu_erro;
 	}
 
-	if(tipo1>=GSON_MAX || tipo2>=GSON_tMAX)
+	if(tipo1!=255 && tipo2!=255)
 	{
-		erro = erGSON_4;
-		goto deu_erro;
+		if(tipo1>=GSON_MAX || tipo2>=GSON_tMAX)
+		{
+			erro = erGSON_4;
+			goto deu_erro;
+		}
 	}
+	else
+	{
+		if(s_gil[ig].modo == GSON_MODO_ZIP || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+		{
+			// esquema de nulo nao aceita em modo ZIP!!
+			erro = erGSON_NULL;
+			goto deu_erro;
+		}
+	}
+	// else (tipo1==255 && tipo2==255) temos um caso NULL de chave!!!
 
 	if(chave > s_gil[ig].cont_itens)
 	{
@@ -357,251 +369,260 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 		pos_bytes_check += 1;
 	}
 
-	if(tipo1 == GSON_LIST)
+
+	if(tipo_mux != TIPO_GSON_NULL)
 	{
-		if(cont_list_a == 0)
+		if(tipo1 == GSON_LIST)
 		{
-			erro = erGSON_8;
-			goto deu_erro;
-		}
-		vezes = cont_list_a;
-
-		if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
-		{
-			if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
+			if(cont_list_a == 0)
 			{
-				memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], &vezes, 2);
-				s_gil[ig].pos_bytes += 2;
-			}
-			pos_bytes_check += 2;
-			//printf("DEBUG gilson_encode_data: [%u,%u,%u,%u]\n", bufw[pos_bytes-4], bufw[pos_bytes-3], bufw[pos_bytes-2], bufw[pos_bytes-1]);
-		}
-
-		if(tipo2==GSON_tSTRING)
-		{
-			// aqui 'cont_list_b' é tratado como uint8
-
-			if(cont_list_b==0)
-			{
-				// precisamos do offset cru da lista de strings...
-				erro = erGSON_9;
+				erro = erGSON_8;
 				goto deu_erro;
 			}
-			else
+			vezes = cont_list_a;
+
+			if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
 			{
-				len_string_max = cont_list_b;
-				if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+				if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
 				{
-					if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
+					memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], &vezes, 2);
+					s_gil[ig].pos_bytes += 2;
+				}
+				pos_bytes_check += 2;
+				//printf("DEBUG gilson_encode_data: [%u,%u,%u,%u]\n", bufw[pos_bytes-4], bufw[pos_bytes-3], bufw[pos_bytes-2], bufw[pos_bytes-1]);
+			}
+
+			if(tipo2==GSON_tSTRING)
+			{
+				// aqui 'cont_list_b' é tratado como uint8
+
+				if(cont_list_b==0)
+				{
+					// precisamos do offset cru da lista de strings...
+					erro = erGSON_9;
+					goto deu_erro;
+				}
+				else
+				{
+					len_string_max = cont_list_b;
+					if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
 					{
-						s_gil[ig].bufw[s_gil[ig].pos_bytes] = len_string_max;
-						s_gil[ig].pos_bytes += 1;
+						if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
+						{
+							s_gil[ig].bufw[s_gil[ig].pos_bytes] = len_string_max;
+							s_gil[ig].pos_bytes += 1;
+						}
+						pos_bytes_check += 1;
 					}
-					pos_bytes_check += 1;
 				}
 			}
 		}
-	}
-	else if(tipo1 == GSON_MTX2D)
-	{
-		// aqui 'cont_list_b' é tratado como uint16
-		if(tipo2==GSON_tSTRING)
+		else if(tipo1 == GSON_MTX2D)
 		{
-			// nao testado isso ainda, vai da ruim
-			erro = erGSON_10;
-			goto deu_erro;
-		}
-
-		if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
-		{
-			erro = erGSON_11;
-			goto deu_erro;
-		}
-		//vezes = cont_list_a * cont_list_b;  nao utiliza...
-
-		if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
-		{
-			if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
+			// aqui 'cont_list_b' é tratado como uint16
+			if(tipo2==GSON_tSTRING)
 			{
-				s_gil[ig].bufw[s_gil[ig].pos_bytes] = (uint8_t)cont_list_a;
-				s_gil[ig].pos_bytes += 1;
-			}
-			pos_bytes_check += 1;
-
-			if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
-			{
-				memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], &cont_list_b, 2);
-				s_gil[ig].pos_bytes += 2;
-			}
-			pos_bytes_check += 2;
-
-			if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
-			{
-				memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], &cont_list_step, 2);
-				s_gil[ig].pos_bytes += 2;
-			}
-			pos_bytes_check += 2;
-			//printf("DEBUG gilson_encode_data: [%u,%u,%u,%u]\n", bufw[pos_bytes-4], bufw[pos_bytes-3], bufw[pos_bytes-2], bufw[pos_bytes-1]);
-		}
-	}
-	else  // GSON_SINGLE
-	{
-		vezes = 1;
-
-		if(tipo2==GSON_tSTRING)
-		{
-			if(cont_list_a==0)
-			{
-				erro = erGSON_12;
+				// nao testado isso ainda, vai da ruim
+				erro = erGSON_10;
 				goto deu_erro;
 			}
-			else
+
+			if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
 			{
-				len_string_max = cont_list_a;
+				erro = erGSON_11;
+				goto deu_erro;
+			}
+			//vezes = cont_list_a * cont_list_b;  nao utiliza...
+
+			if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+			{
+				if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
+				{
+					s_gil[ig].bufw[s_gil[ig].pos_bytes] = (uint8_t)cont_list_a;
+					s_gil[ig].pos_bytes += 1;
+				}
+				pos_bytes_check += 1;
+
+				if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
+				{
+					memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], &cont_list_b, 2);
+					s_gil[ig].pos_bytes += 2;
+				}
+				pos_bytes_check += 2;
+
+				if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
+				{
+					memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], &cont_list_step, 2);
+					s_gil[ig].pos_bytes += 2;
+				}
+				pos_bytes_check += 2;
+				//printf("DEBUG gilson_encode_data: [%u,%u,%u,%u]\n", bufw[pos_bytes-4], bufw[pos_bytes-3], bufw[pos_bytes-2], bufw[pos_bytes-1]);
 			}
 		}
-	}
-
-
-	switch(tipo2)
-	{
-	case GSON_tBIT:
-		// nada ainda...
-		break;
-	case GSON_tINT8:
-	case GSON_tUINT8:
-		nbytes = 1;
-		break;
-	case GSON_tINT16:
-	case GSON_tUINT16:
-		nbytes = 2;
-		break;
-	case GSON_tINT32:
-	case GSON_tUINT32:
-		nbytes = 4;
-		break;
-	case GSON_tINT64:
-	case GSON_tUINT64:
-		nbytes = 8;
-		break;
-	case GSON_tFLOAT32:
-		nbytes = 4;
-		break;
-	case GSON_tFLOAT64:
-		nbytes = 8;
-		break;
-	case GSON_tSTRING:
-		// só vai...
-		break;
-	default:
-		erro = erGSON_13;
-		goto deu_erro;
-	}
-
-
-	if(tipo2 == GSON_tSTRING)
-	{
-		for(i=0; i<vezes; i++)
+		else  // GSON_SINGLE
 		{
-			// OBS: é obrigado ter o 'len_string_max' que é o valor de 'cont_list_b'!!!!!!!!!!!!
-			memset(buff, 0x00, sizeof(buff));  // limpeza pra evitar lixos antigos
-			memcpy(buff, valor+(i*len_string_max), len_string_max);
-			len = strlen(buff);  // vai esbarrar no primero '\0' que encontrar...
-			// problema é com a codificação utf-8 que se formos truncar tem que cuidar onde truncar...
+			vezes = 1;
 
-			//printf("DEBUGGGGGGGGGGGGGGGGGGGGGG len:%u, len_string_max:%u, |%s| |%s|\n", len, len_string_max, multi_data, buff);
-
-			if(len>=len_string_max)
+			if(tipo2==GSON_tSTRING)
 			{
-				// nao temos '\0'???? caso len==len_string_max, string ta no limite!!!
-
-				/*
-				len = len_string_max;
-				buff[len-1] = 0;  // para garantir o '\0'
-				if(buff[len-2]>0 && (buff[len-2]<32 || buff[len-2]>126))  // tabela ascii, se caso ficou bugado em um utf-8
+				if(cont_list_a==0)
 				{
-					buff[len-2] = 0;
+					erro = erGSON_12;
+					goto deu_erro;
 				}
-				len = strlen(buff);  // atualiza os ajustes
-				*/
-
-				// vamos ver se temos um caso de utf-8 no ultimo byte...
-				if(buff[len-1]>0 && (buff[len-1]<32 || buff[len-1]>126))  // tabela ascii, se caso ficou bugado em um utf-8
+				else
 				{
-					buff[len-1] = 0;
+					len_string_max = cont_list_a;
+				}
+			}
+		}
+
+
+		switch(tipo2)
+		{
+		case GSON_tBIT:
+			// nada ainda...
+			break;
+		case GSON_tINT8:
+		case GSON_tUINT8:
+			nbytes = 1;
+			break;
+		case GSON_tINT16:
+		case GSON_tUINT16:
+			nbytes = 2;
+			break;
+		case GSON_tINT32:
+		case GSON_tUINT32:
+			nbytes = 4;
+			break;
+		case GSON_tINT64:
+		case GSON_tUINT64:
+			nbytes = 8;
+			break;
+		case GSON_tFLOAT32:
+			nbytes = 4;
+			break;
+		case GSON_tFLOAT64:
+			nbytes = 8;
+			break;
+		case GSON_tSTRING:
+			// só vai...
+			break;
+		default:
+			erro = erGSON_13;
+			goto deu_erro;
+		}
+
+
+		if(tipo2 == GSON_tSTRING)
+		{
+			for(i=0; i<vezes; i++)
+			{
+				// OBS: é obrigado ter o 'len_string_max' que é o valor de 'cont_list_b'!!!!!!!!!!!!
+				memset(buff, 0x00, sizeof(buff));  // limpeza pra evitar lixos antigos
+				memcpy(buff, valor+(i*len_string_max), len_string_max);
+				len = strlen(buff);  // vai esbarrar no primero '\0' que encontrar...
+				// problema é com a codificação utf-8 que se formos truncar tem que cuidar onde truncar...
+
+				//printf("DEBUGGGGGGGGGGGGGGGGGGGGGG len:%u, len_string_max:%u, |%s| |%s|\n", len, len_string_max, multi_data, buff);
+
+				if(len>=len_string_max)
+				{
+					// nao temos '\0'???? caso len==len_string_max, string ta no limite!!!
+
+					/*
+					len = len_string_max;
+					buff[len-1] = 0;  // para garantir o '\0'
 					if(buff[len-2]>0 && (buff[len-2]<32 || buff[len-2]>126))  // tabela ascii, se caso ficou bugado em um utf-8
 					{
 						buff[len-2] = 0;
 					}
 					len = strlen(buff);  // atualiza os ajustes
+					*/
+
+					// vamos ver se temos um caso de utf-8 no ultimo byte...
+					if(buff[len-1]>0 && (buff[len-1]<32 || buff[len-1]>126))  // tabela ascii, se caso ficou bugado em um utf-8
+					{
+						buff[len-1] = 0;
+						if(buff[len-2]>0 && (buff[len-2]<32 || buff[len-2]>126))  // tabela ascii, se caso ficou bugado em um utf-8
+						{
+							buff[len-2] = 0;
+						}
+						len = strlen(buff);  // atualiza os ajustes
+					}
+				}
+
+				if(len<=255)
+				{
+					if(flag_teste==0)
+					{
+						s_gil[ig].bufw[s_gil[ig].pos_bytes] = (uint8_t)len;
+						s_gil[ig].pos_bytes += 1;
+					}
+					pos_bytes_check += 1;
+
+					if(flag_teste==0)
+					{
+						memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], buff, len);
+						s_gil[ig].pos_bytes += len;
+					}
+					pos_bytes_check += len;
+				}
+				else
+				{
+					erro = erGSON_14;  // nao é pra cair aqui pois o max de 'len_string_max' é 255 u8
+					break;
 				}
 			}
-
-			if(len<=255)
+		}
+		else if(tipo2 == GSON_tBIT)
+		{
+			// nada ainda...
+		}
+		else  // para o resto é só varer bytes
+		{
+			if(tipo1 == GSON_MTX2D)
 			{
-				if(flag_teste==0)
+				// vamos ao exemplo:
+				// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
+				// 10*250=2500 elementos serializados e como é float *4 = 10000 bytes, mas a serializacao vai ir [0][0], [0][1]...[0][249], [1][0] ... [9][249]
+				// logo se eu quero x[2][3] tenho que dar os offset com base nos valores máximos (250 elementos cada linha)
+				for(i=0; i<cont_list_a; i++)
 				{
-					s_gil[ig].bufw[s_gil[ig].pos_bytes] = (uint8_t)len;
-					s_gil[ig].pos_bytes += 1;
+					temp16 = i*cont_list_step*nbytes;  // passos em cada linha da matriz
+					if(flag_teste==0)
+					{
+						memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], valor+temp16, nbytes*cont_list_b);
+						s_gil[ig].pos_bytes += nbytes*cont_list_b;
+					}
+					pos_bytes_check += nbytes*cont_list_b;
 				}
-				pos_bytes_check += 1;
-
-				if(flag_teste==0)
-				{
-					memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], buff, len);
-					s_gil[ig].pos_bytes += len;
-				}
-				pos_bytes_check += len;
 			}
 			else
 			{
-				erro = erGSON_14;  // nao é pra cair aqui pois o max de 'len_string_max' é 255 u8
-				break;
-			}
-		}
-	}
-	else if(tipo2 == GSON_tBIT)
-	{
-		// nada ainda...
-	}
-	else  // para o resto é só varer bytes
-	{
-		if(tipo1 == GSON_MTX2D)
-		{
-			// vamos ao exemplo:
-			// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
-			// 10*250=2500 elementos serializados e como é float *4 = 10000 bytes, mas a serializacao vai ir [0][0], [0][1]...[0][249], [1][0] ... [9][249]
-			// logo se eu quero x[2][3] tenho que dar os offset com base nos valores máximos (250 elementos cada linha)
-			for(i=0; i<cont_list_a; i++)
-			{
-				temp16 = i*cont_list_step*nbytes;  // passos em cada linha da matriz
 				if(flag_teste==0)
 				{
-					memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], valor+temp16, nbytes*cont_list_b);
-					s_gil[ig].pos_bytes += nbytes*cont_list_b;
+					memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], valor, nbytes*vezes);
+					s_gil[ig].pos_bytes += nbytes*vezes;
 				}
-				pos_bytes_check += nbytes*cont_list_b;
+				pos_bytes_check += nbytes*vezes;
 			}
 		}
-		else
-		{
-			if(flag_teste==0)
-			{
-				memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], valor, nbytes*vezes);
-				s_gil[ig].pos_bytes += nbytes*vezes;
-			}
-			pos_bytes_check += nbytes*vezes;
-		}
-	}
 
-	/*
-	if(flag_teste)
-	{
-		flag_teste = 0;  // desativa modo teste!!!
-		s_gil[ig].pos_bytes = pos_bytes_bk;  // restaura backup atual
-		goto goto_meta_bala;
+		/*
+		if(flag_teste)
+		{
+			flag_teste = 0;  // desativa modo teste!!!
+			s_gil[ig].pos_bytes = pos_bytes_bk;  // restaura backup atual
+			goto goto_meta_bala;
+		}
+		*/
 	}
-	*/
+	else
+	{
+		s_gil[ig].chaves_null+=1;
+	}
+	// else (tipo_mux == TIPO_GSON_NULL)  so grava o 'tipo_mux' e cai fora...
 
 	deu_erro:
 
@@ -1159,6 +1180,26 @@ int32_t gilson_encode_mapdin(const uint16_t *map, ...)
 }
 
 
+// quando temos um mapa de chaves definido e nao vamos encodadar uma ou mais chaves desse mapa devemos setar a chave como nula para nao bugar a logica da contagem das chaves
+int32_t gilson_encode_data_null(const uint8_t chave, ...)
+{
+    char *nome_chave = {"\0"};
+    uint8_t dummy=0;
+    va_list argptr;
+
+    va_start(argptr, chave);
+
+    if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+    {
+        nome_chave = va_arg(argptr, char *);
+    }
+
+    return gilson_encode_data_base(chave, nome_chave, 255, 255, &dummy, 0, 0, 0);
+}
+
+
+
+
 
 
 //========================================================================================================================
@@ -1257,7 +1298,7 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 	}
 
 #if (USO_DEBUG_LIB==1)
-	printf("DEBUG gilson_decode_init::: ig:%u, erro:%i  modo:%u  pos_bytes:%u  cont_itens:%u  cru:[%u,%u,%u,%u,%u,%u,%u,%u]  crc:%u==%u  pos_bytes2:%u  cont_itens2:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
+	printf("DEBUG gilson_decode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u], crc:%u==%u, pos_bytes2:%u, cont_itens2:%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
 #endif
 
 	return erro;
@@ -1279,6 +1320,7 @@ int32_t gilson_decode_valid(const uint8_t *pack)
 int32_t gilson_decode_end(void)
 {
 	int32_t erro=erGSON_OK;
+	uint8_t flag_full=0;
 
 	if(s_gil[ig].erro != erGSON_OK)
 	{
@@ -1292,18 +1334,21 @@ int32_t gilson_decode_end(void)
 	}
 	else  // outros modos
 	{
+		flag_full=1;
 		// 's_gil[ig].crc_out' ja foi calculado em 'gilson_decode_init()'
-		if(s_gil[ig].cont_itens == s_gil[ig].cont_itens2 && s_gil[ig].pos_bytes != s_gil[ig].pos_bytes2)
+		if(s_gil[ig].cont_itens == s_gil[ig].cont_itens2 && s_gil[ig].pos_bytes != s_gil[ig].pos_bytes2 && s_gil[ig].chaves_null==0)
 		{
-			// chegou até o fim 'cont_itens2' mas o 'pos_bytes' nao bateu com o 'pos_bytes2', dai deu ruim
+			// chegou até o fim onde 'cont_itens2 == cont_itens' logo deve 'pos_bytes == pos_bytes2', se 'pos_bytes' for diferente então deu ruim
 			erro = erGSON_20;
 		}
+		/*
 		else
 		{
-			// indica que nao leu todas chaves ou nao foi até a última ou nao veu em ordem até o fim
+			// indica que nao leu todas chaves ou nao foi até a última ou nao leu em ordem até o fim
 			s_gil[ig].pos_bytes = s_gil[ig].pos_bytes2;
 			s_gil[ig].cont_itens = s_gil[ig].cont_itens2;
 		}
+		*/
 	}
 
 	s_gil[ig].ativo = 0;
@@ -1311,11 +1356,18 @@ int32_t gilson_decode_end(void)
 	deu_erro:
 
 #if (USO_DEBUG_LIB==1)
-	printf("DEBUG gilson_decode_end::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
+	printf("DEBUG gilson_decode_end::: ig:%u, erro:%i, end_ram:%X, modo:%u(%u), nulas:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, flag_full, s_gil[ig].chaves_null, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
 #endif
 
 	if(erro==erGSON_OK)
 	{
+		if(flag_full)
+		{
+			s_gil[ig].pos_bytes = s_gil[ig].pos_bytes2;
+			s_gil[ig].cont_itens = s_gil[ig].cont_itens2;
+		}
+
+
 		if(ig==1)
 		{
 			ig = 0;  // volta para o primeiro, pois está aberto!!!
@@ -1653,6 +1705,9 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 		goto deu_erro;
 	}
 
+#if (USO_DEBUG_LIB==1)
+	printf("DEBUG gilson_decode_data_full_base init::: ig:%u, chave:%u, nulos:%u, cont_itens:%u, cont_itens2:%u, pos_bytes:%u\n", ig, chave, s_gil[ig].chaves_null, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].pos_bytes);
+#endif
 
 	while(1)
 	{
@@ -1707,173 +1762,200 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 		tipo_mux = s_gil[ig].bufr[pos_bytes];
 		pos_bytes += 1;
 
-		// 0baaabbbbb = a:tipo1, b=tipo2
-		//tipo_mux = tipo1<<5;
-		//tipo_mux |= tipo2;
-		tipo1 = tipo_mux>>5;
-		tipo2 = tipo_mux&0b11111;
-		//printf("decode: 0baaabbbbb = a:tipo1(%u), b=tipo2()%u tipo_mux:%u\n", tipo1, tipo2, tipo_mux);
 
-
-		if(tipo1>=GSON_MAX || tipo2>=GSON_tMAX)
+		if(tipo_mux != TIPO_GSON_NULL)
 		{
-			erro = erGSON_31;
-			goto deu_erro;
-		}
+			// 0baaabbbbb = a:tipo1, b=tipo2
+			//tipo_mux = tipo1<<5;
+			//tipo_mux |= tipo2;
+			tipo1 = tipo_mux>>5;
+			tipo2 = tipo_mux&0b11111;
+			//printf("decode: 0baaabbbbb = a:tipo1(%u), b=tipo2()%u tipo_mux:%u\n", tipo1, tipo2, tipo_mux);
 
-		if(tipo1 == GSON_LIST)
-		{
-			memcpy(&vezes, &s_gil[ig].bufr[pos_bytes], 2);
-			pos_bytes += 2;
-
-			if(vezes == 0)
+			if(tipo1>=GSON_MAX || tipo2>=GSON_tMAX)
 			{
-				erro = erGSON_32;
+				erro = erGSON_31;
 				goto deu_erro;
 			}
 
-			if(tipo2 == GSON_tSTRING)
+			if(tipo1 == GSON_LIST)
 			{
-				cont_list_b = s_gil[ig].bufr[pos_bytes];
-				pos_bytes += 1;
+				memcpy(&vezes, &s_gil[ig].bufr[pos_bytes], 2);
+				pos_bytes += 2;
 
-				if(cont_list_b==0)
+				if(vezes == 0)
 				{
-					// precisamos do offset cru da lista de strings...
-					erro = erGSON_33;
+					erro = erGSON_32;
 					goto deu_erro;
 				}
-			}
-		}
-		else if(tipo1 == GSON_MTX2D)
-		{
-			cont_list_a = s_gil[ig].bufr[pos_bytes];
-			pos_bytes += 1;
-			memcpy(&cont_list_b, &s_gil[ig].bufr[pos_bytes], 2);
-			pos_bytes += 2;
-			memcpy(&cont_list_step, &s_gil[ig].bufr[pos_bytes], 2);
-			pos_bytes += 2;
 
-			//vezes = cont_list_a * cont_list_b;
-			if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
-			{
-				erro = erGSON_34;
-				goto deu_erro;
-			}
-		}
-		else  // GSON_SINGLE
-		{
-			// ja alocou 'tipo2'...
-			vezes = 1;
-
-			/*
-			if(tipo2==GSON_tSTRING)
-			{
-				if(cont_list_a==0)  // por mais que nao vá utilizar... para 1 string somente
+				if(tipo2 == GSON_tSTRING)
 				{
-					erro = -9;
-					goto deu_erro;
-				}
-			}
-			*/
-			// 'cont_list_a' só precisa na codificacao, agora é com base no 'len' da vez
-		}
+					cont_list_b = s_gil[ig].bufr[pos_bytes];
+					pos_bytes += 1;
 
-
-		// terminada os decodes de tipos...
-		if(s_gil[ig].tipo_dinamico == 0)
-		{
-			s_gil[ig].pos_bytes = pos_bytes;  // segue o baile de onde estava...
-		}
-		else
-		{
-			s_gil[ig].pos_bytes_dl = pos_bytes;  // para a próxima vez...
-			// lembrando que 's_gil[ig].pos_bytes' ja está na posicao correta da sequencia
-		}
-
-
-
-		switch(tipo2)
-		{
-		case GSON_tBIT:
-			// nada ainda...
-			break;
-		case GSON_tINT8:
-		case GSON_tUINT8:
-			nbytes=1;
-			break;
-		case GSON_tINT16:
-		case GSON_tUINT16:
-			nbytes=2;
-			break;
-		case GSON_tINT32:
-		case GSON_tUINT32:
-			nbytes=4;
-			break;
-		case GSON_tINT64:
-		case GSON_tUINT64:
-			nbytes=8;
-			break;
-		case GSON_tFLOAT32:
-			nbytes=4;
-			break;
-		case GSON_tFLOAT64:
-			nbytes=8;
-			break;
-		case GSON_tSTRING:
-			// só vai...
-			break;
-		default:
-			erro = erGSON_35;
-			goto deu_erro;
-		}
-
-
-		if(tipo2 == GSON_tSTRING)
-		{
-			for(i=0; i<vezes; i++)
-			{
-				len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
-				s_gil[ig].pos_bytes += 1;
-				if(bypass == 0)
-				{
-					memcpy(valor+(i*cont_list_b), &s_gil[ig].bufr[s_gil[ig].pos_bytes], len);
-				}
-				s_gil[ig].pos_bytes += len;
-			}
-		}
-		else if(tipo2 == GSON_tBIT)
-		{
-			// nada ainda...
-		}
-		else
-		{
-			// para o resto é só varer bytes
-			if(tipo1 == GSON_MTX2D)
-			{
-				// vamos ao exemplo:
-				// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
-				// 10*250=2500 elementos serializados e como é float *4 = 10000 bytes, mas a serializacao vai ir [0][0], [0][1]...[0][249], [1][0] ... [9][249]
-				// logo se eu quero x[2][3] tenho que dar os offset com base nos valores máximos (250 elementos cada linha)
-				for(i=0; i<cont_list_a; i++)
-				{
-					temp16 = i*cont_list_step*nbytes;  // passos em cada linha da matriz
-					if(bypass == 0)
+					if(cont_list_b==0)
 					{
-						memcpy(valor+temp16, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*cont_list_b);
+						// precisamos do offset cru da lista de strings...
+						erro = erGSON_33;
+						goto deu_erro;
 					}
-					s_gil[ig].pos_bytes += nbytes*cont_list_b;
 				}
+			}
+			else if(tipo1 == GSON_MTX2D)
+			{
+				cont_list_a = s_gil[ig].bufr[pos_bytes];
+				pos_bytes += 1;
+				memcpy(&cont_list_b, &s_gil[ig].bufr[pos_bytes], 2);
+				pos_bytes += 2;
+				memcpy(&cont_list_step, &s_gil[ig].bufr[pos_bytes], 2);
+				pos_bytes += 2;
+
+				//vezes = cont_list_a * cont_list_b;
+				if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
+				{
+					erro = erGSON_34;
+					goto deu_erro;
+				}
+			}
+			else  // GSON_SINGLE
+			{
+				// ja alocou 'tipo2'...
+				vezes = 1;
+
+				/*
+				if(tipo2==GSON_tSTRING)
+				{
+					if(cont_list_a==0)  // por mais que nao vá utilizar... para 1 string somente
+					{
+						erro = -9;
+						goto deu_erro;
+					}
+				}
+				*/
+				// 'cont_list_a' só precisa na codificacao, agora é com base no 'len' da vez
+			}
+
+
+			// terminada os decodes de tipos...
+			if(s_gil[ig].tipo_dinamico == 0)
+			{
+				s_gil[ig].pos_bytes = pos_bytes;  // segue o baile de onde estava...
 			}
 			else
 			{
-				if(bypass == 0)
+				s_gil[ig].pos_bytes_dl = pos_bytes;  // para a próxima vez...
+				// lembrando que 's_gil[ig].pos_bytes' ja está na posicao correta da sequencia
+			}
+
+
+
+			switch(tipo2)
+			{
+			case GSON_tBIT:
+				// nada ainda...
+				break;
+			case GSON_tINT8:
+			case GSON_tUINT8:
+				nbytes=1;
+				break;
+			case GSON_tINT16:
+			case GSON_tUINT16:
+				nbytes=2;
+				break;
+			case GSON_tINT32:
+			case GSON_tUINT32:
+				nbytes=4;
+				break;
+			case GSON_tINT64:
+			case GSON_tUINT64:
+				nbytes=8;
+				break;
+			case GSON_tFLOAT32:
+				nbytes=4;
+				break;
+			case GSON_tFLOAT64:
+				nbytes=8;
+				break;
+			case GSON_tSTRING:
+				// só vai...
+				break;
+			default:
+				erro = erGSON_35;
+				goto deu_erro;
+			}
+
+
+			if(tipo2 == GSON_tSTRING)
+			{
+				for(i=0; i<vezes; i++)
 				{
-					memcpy(valor, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*vezes);
+					len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
+					s_gil[ig].pos_bytes += 1;
+					if(bypass == 0)
+					{
+						memcpy(valor+(i*cont_list_b), &s_gil[ig].bufr[s_gil[ig].pos_bytes], len);
+					}
+					s_gil[ig].pos_bytes += len;
 				}
-				s_gil[ig].pos_bytes += nbytes*vezes;
+			}
+			else if(tipo2 == GSON_tBIT)
+			{
+				// nada ainda...
+			}
+			else
+			{
+				// para o resto é só varer bytes
+				if(tipo1 == GSON_MTX2D)
+				{
+					// vamos ao exemplo:
+					// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
+					// 10*250=2500 elementos serializados e como é float *4 = 10000 bytes, mas a serializacao vai ir [0][0], [0][1]...[0][249], [1][0] ... [9][249]
+					// logo se eu quero x[2][3] tenho que dar os offset com base nos valores máximos (250 elementos cada linha)
+					for(i=0; i<cont_list_a; i++)
+					{
+						temp16 = i*cont_list_step*nbytes;  // passos em cada linha da matriz
+						if(bypass == 0)
+						{
+							memcpy(valor+temp16, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*cont_list_b);
+						}
+						s_gil[ig].pos_bytes += nbytes*cont_list_b;
+					}
+				}
+				else
+				{
+					if(bypass == 0)
+					{
+						memcpy(valor, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*vezes);
+					}
+					s_gil[ig].pos_bytes += nbytes*vezes;
+				}
 			}
 		}
+		else
+		{
+			if(bypass == 0)
+			{
+				s_gil[ig].chaves_null+=1;  // temos chaves nulas, vai incrementando para análise final
+			}
+
+			// terminada os decodes de tipos...
+			if(s_gil[ig].tipo_dinamico == 0)
+			{
+				s_gil[ig].pos_bytes = pos_bytes;  // segue o baile de onde estava...
+			}
+			else
+			{
+				s_gil[ig].pos_bytes_dl = pos_bytes;  // para a próxima vez...
+				// lembrando que 's_gil[ig].pos_bytes' ja está na posicao correta da sequencia
+			}
+
+		}
+		// else (tipo1==255 && tipo2==255) temos um caso NULL de chave!!!
+
+#if (USO_DEBUG_LIB==1)
+		printf("DEBUG gilson_decode_data_full_base loop::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
+#endif
 
 		s_gil[ig].erro = erro;
 
@@ -1885,17 +1967,19 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 		}
 		else
 		{
-	#if (USO_DEBUG_LIB==1)
-			printf("DEBUG gilson_decode_data_full::: ig:%u, ERRO:%i tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, chave:%u, cont_itens:%u\n", ig, erro, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, chave, s_gil[ig].cont_itens);
-	#endif
-			break;
+			break;  // deu erro, cai fora...
 		}
 
 		if(bypass == 0)
 		{
 			break;
 		}
-	}
+	}  // fim while(1)
+
+
+#if (USO_DEBUG_LIB==1)
+	printf("DEBUG gilson_decode_data_full_base::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
+#endif
 
 	return erro;
 }

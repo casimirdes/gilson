@@ -1,11 +1,19 @@
+/*
+ * gilson.h
+ *
+ *  Created on: 30 de out. de 2024
+ *      Author: mella
+ */
+
+
 
 /*
  ============================================================================
- Name			: gilson.h
- Author			: mjm
- Version		: 0.51
- Date			: 01/06/25
- Description : biblioteca 'gilson'
+ Name			: gilson_c
+ Author			: mella
+ Version		: 0.52
+ Date			: 08/06/25
+ Description 	: biblioteca 'gilson'
  ============================================================================
  */
 
@@ -51,7 +59,7 @@ enum e_TIPOS2_GILSON
 	GSON_tFLOAT64,
 	GSON_tSTRING,
 	GSON_tMAX,
-	// GSON_tMAX == 0b1111 (1 a 31)
+	// GSON_tMAX == 0b1110 (1 a 30)
 };
 
 
@@ -60,6 +68,7 @@ enum e_erros_GILSON
 	// vai fazer 'erGSON_xxxx' onde xxxx-1000 = erro retornado
 	erGSON_OK = 0,
 	erGSON_0 = -1000,
+	erGSON_NULL,  // add chave 'null' no modo ZIP
 	erGSON_1,
 	erGSON_2,
 	erGSON_3,
@@ -143,6 +152,7 @@ int32_t gilson_encode_dataKV(const uint8_t chave, const uint8_t tipo1, const uin
 int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, ...);
 int32_t gilson_encode_mapfix(const uint16_t *map, ...);
 int32_t gilson_encode_mapdin(const uint16_t *map, ...);
+int32_t gilson_encode_data_null(const uint8_t chave, ...);
 int32_t gilson_encode_end(void);
 int32_t gilson_encode_end_crc(uint32_t *crc);
 
