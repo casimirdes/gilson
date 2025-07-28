@@ -11,8 +11,8 @@
  ============================================================================
  Name			: gilson_c
  Author			: mella
- Version		: 0.52
- Date			: 08/06/25
+ Version		: 0.53
+ Date			: 26/07/25
  Description 	: biblioteca 'gilson'
  ============================================================================
  */
@@ -175,6 +175,8 @@ int32_t gilson_decode_mapfix(const uint16_t *map, ...);
 int32_t gilson_decode_mapdin(const uint16_t *map, ...);
 int32_t gilson_decode_end(void);
 int32_t gilson_decode_end_crc(uint32_t *crc);
+
+int32_t gilson_decode_key(const uint8_t *pack, const uint8_t chave, uint8_t *valor);
 
 // decode lista dinâmica "dl"
 int32_t gilson_decode_dl_init(const uint8_t chave);

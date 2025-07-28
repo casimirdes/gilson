@@ -18,7 +18,22 @@
 
 #include "gilson.h"
 
+// fins de debug
+#define TIPO_DEVICE			1  // 0=microcontrolador, 1=PC
 #define USO_DEBUG_LIB		0  // ativa os prints debug, mais dedicado a PC
+#define PRINT_DEBUG			0  // 1 = printa toda vida o debug
+
+
+#if (TIPO_DEVICE==1)
+
+// ...
+
+#else
+
+// ...
+
+#endif  // #if (TIPO_DEVICE==1)
+
 
 #define SIZE_TYPE_RAM		uint64_t  // como a RAM é 'medida/vista' no sistema: uint8_t, uint16_t, uint32_t, uint64_t, (ex.: PC de 64bits = uint64_t)
 
@@ -148,8 +163,12 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 	s_gil[ig].erro = erro;
 
 #if (USO_DEBUG_LIB==1)
-	printf("DEBUG gilson_encode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
-#endif
+#if (TIPO_DEVICE==0)
+		printf_DEBUG("DEBUG gilson_encode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
+#else  // PC
+		printf("DEBUG gilson_encode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
 
 	s_gil[ig].ativo = 1;  // ativa a estrutura 'ig' da vez!!!
 	return erro;
@@ -189,8 +208,12 @@ int32_t gilson_encode_end(void)
 	}
 
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_encode_end::: erro:%i, ig:%u, end_ram:%X, modo:%u pos_bytes:%u cont_itens:%u crc:%u cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
+#else  // PC
 	printf("DEBUG gilson_encode_end::: erro:%i, ig:%u, end_ram:%X, modo:%u pos_bytes:%u cont_itens:%u crc:%u cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
 
 	s_gil[ig].ativo = 0;
 
@@ -243,9 +266,15 @@ int32_t gilson_encode_end_crc(uint32_t *crc)
 		}
 	}
 
+
 #if (USO_DEBUG_LIB==1)
-	printf("DEBUG gilson_encode_end_crc::: erro:%i, ig:%u, modo:%u pos_bytes:%u cont_itens:%u crc:%u cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
-#endif
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_encode_end_crc::: erro:%i, ig:%u, modo:%u, pos_bytes:%u, cont_itens:%u, crc:%u, chaves_null:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].chaves_null, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
+#else  // PC
+	printf("DEBUG gilson_encode_end_crc::: erro:%i, ig:%u, modo:%u, pos_bytes:%u, cont_itens:%u, crc:%u, chaves_null:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].chaves_null, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 
 	s_gil[ig].ativo = 0;
 
@@ -620,7 +649,10 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 	}
 	else
 	{
-		s_gil[ig].chaves_null+=1;
+		if(flag_teste==1)  // ou em 0 ou em 1, mas nao nos 2 pois vai duplicar
+		{
+			s_gil[ig].chaves_null+=1;
+		}
 	}
 	// else (tipo_mux == TIPO_GSON_NULL)  so grava o 'tipo_mux' e cai fora...
 
@@ -656,9 +688,15 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 	else
 	{
 		s_gil[ig].erro = erro;
+
 #if (USO_DEBUG_LIB==1)
-		printf("DEBUG gilson_encode_data::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, flag_teste:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, flag_teste, s_gil[ig].tipo_dinamico);
-#endif
+#if (TIPO_DEVICE==0)
+		printf_DEBUG("DEBUG gilson_encode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, flag_teste:%u, tipo_dinamico:%u, pos_bytes_check:%u|%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, flag_teste, s_gil[ig].tipo_dinamico, pos_bytes_check, s_gil[ig].size_max_pack, s_gil[ig].chaves_null);
+#else  // PC
+		printf("DEBUG gilson_encode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, flag_teste:%u, tipo_dinamico:%u, pos_bytes_check:%u|%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, flag_teste, s_gil[ig].tipo_dinamico, pos_bytes_check, s_gil[ig].size_max_pack, s_gil[ig].chaves_null);
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 	}
 
 	return erro;
@@ -746,9 +784,14 @@ int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const
 		s_gil[ig].erro = erro;
 	}
 
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_encode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, tam_list, nitens);
+#else  // PC
 	printf("DEBUG gilson_encode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, tam_list, nitens);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
 
 	return erro;
 }
@@ -923,9 +966,15 @@ int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint
 	if(erro!=erGSON_OK)
 	{
 		s_gil[ig].erro = erro;
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+		printf_DEBUG("DEBUG gilson_encode_dl_add::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
+#else  // PC
 		printf("DEBUG gilson_encode_dl_add::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 	}
 
 	return erro;
@@ -954,9 +1003,15 @@ int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uin
 	else
 	{
 		s_gil[ig].erro = erro;
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+		printf_DEBUG("DEBUG gilson_encode_dl_data::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
+#else  // PC
 		printf("DEBUG gilson_encode_dl_data::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 	}
 
 	return erro;
@@ -977,9 +1032,14 @@ int32_t gilson_encode_dl_end(void)
 		erro = erGSON_49;
 	}
 
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_encode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
+#else  // PC
 	printf("DEBUG gilson_encode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
 
 	s_gil[ig].tipo_dinamico = 0;  // finalizando o tratar um tipo dinamico
 
@@ -1297,9 +1357,15 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 		s_gil[ig].ativo = 0;
 	}
 
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_decode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u], crc:%u==%u, pos_bytes2:%u, cont_itens2:%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
+#else  // PC
 	printf("DEBUG gilson_decode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u], crc:%u==%u, pos_bytes2:%u, cont_itens2:%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 
 	return erro;
 }
@@ -1355,9 +1421,15 @@ int32_t gilson_decode_end(void)
 
 	deu_erro:
 
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_decode_end::: ig:%u, erro:%i, end_ram:%X, modo:%u(%u), nulas:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, flag_full, s_gil[ig].chaves_null, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
+#else  // PC
 	printf("DEBUG gilson_decode_end::: ig:%u, erro:%i, end_ram:%X, modo:%u(%u), nulas:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, flag_full, s_gil[ig].chaves_null, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 
 	if(erro==erGSON_OK)
 	{
@@ -1423,8 +1495,13 @@ int32_t gilson_decode_end_crc(uint32_t *crc)
 	deu_erro:
 
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
+#else  // PC
 	printf("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 
 	if(erro==erGSON_OK)
 	{
@@ -1650,9 +1727,15 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 	else
 	{
 		s_gil[ig].erro = erro;
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+		printf_DEBUG("DEBUG gilson_decode_data::: ig:%u, ERRO:%i modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
+#else  // PC
 		printf("DEBUG gilson_decode_data::: ig:%u, ERRO:%i modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 	}
 
 	return erro;
@@ -1705,9 +1788,15 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 		goto deu_erro;
 	}
 
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_decode_data_full_base init::: ig:%u, chave:%u, nulos:%u, cont_itens:%u, cont_itens2:%u, pos_bytes:%u\n", ig, chave, s_gil[ig].chaves_null, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].pos_bytes);
+#else  // PC
 	printf("DEBUG gilson_decode_data_full_base init::: ig:%u, chave:%u, nulos:%u, cont_itens:%u, cont_itens2:%u, pos_bytes:%u\n", ig, chave, s_gil[ig].chaves_null, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].pos_bytes);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 
 	while(1)
 	{
@@ -1953,9 +2042,15 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 		}
 		// else (tipo1==255 && tipo2==255) temos um caso NULL de chave!!!
 
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+		printf_DEBUG("DEBUG gilson_decode_data_full_base loop::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
+#else  // PC
 		printf("DEBUG gilson_decode_data_full_base loop::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 
 		s_gil[ig].erro = erro;
 
@@ -1978,8 +2073,12 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 
 
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_decode_data_full_base::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
+#else  // PC
 	printf("DEBUG gilson_decode_data_full_base::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
 
 	return erro;
 }
@@ -2151,9 +2250,14 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 		s_gil[ig].erro = erro;
 	}
 
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_decode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, s_gil[ig].tam_list, s_gil[ig].nitens);
+#else  // PC
 	printf("DEBUG gilson_decode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, s_gil[ig].tam_list, s_gil[ig].nitens);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
 
 	return erro;
 }
@@ -2196,9 +2300,15 @@ int32_t gilson_decode_dl_data(const uint8_t item, uint8_t *valor)
 	else
 	{
 		s_gil[ig].erro = erro;
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+		printf_DEBUG("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u\n", ig, erro, s_gil[ig].modo, item);
+#else  // PC
 		printf("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u\n", ig, erro, s_gil[ig].modo, item);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
 	}
 
 	return erro;
@@ -2220,9 +2330,14 @@ int32_t gilson_decode_dl_end(void)
 		erro = erGSON_61;
 	}
 
+
 #if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_decode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
+#else  // PC
 	printf("DEBUG gilson_decode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
-#endif
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
 
 	s_gil[ig].tipo_dinamico = 0;  // finalizando o tratar um tipo dinamico
 
@@ -2470,5 +2585,36 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 	{
 		return gilson_decode_data_full_base(chave, nome_chave, valor);
 	}
+}
+
+
+// somente para 'GSON_MODO_FULL'
+int32_t gilson_decode_key(const uint8_t *pack, const uint8_t chave, uint8_t *valor)
+{
+	int32_t erro=erGSON_OK, pos_bytes=0;
+	uint8_t modo=0;
+
+	erro = gilson_decode_init(pack, &modo);
+	if(modo==GSON_MODO_FULL)
+	{
+		erro = gilson_decode(chave, valor);
+		pos_bytes = gilson_decode_end();
+	}
+	else
+	{
+		erro = erGSON_62;
+	}
+
+
+#if (USO_DEBUG_LIB==1)
+#if (TIPO_DEVICE==0)
+	printf_DEBUG("DEBUG gilson_decode_key::: erro:%i, modo:%u, chave:%u, pos_bytes:%i\n", erro, modo, chave, pos_bytes);
+#else  // PC
+	printf("DEBUG gilson_decode_key::: erro:%i, modo:%u, chave:%u, pos_bytes:%i\n", erro, modo, chave, pos_bytes);
+#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (USO_DEBUG_LIB==1)
+
+
+	return erro;
 }
 
