@@ -11,8 +11,8 @@
  ============================================================================
  Name			: gilson_c
  Author			: matheus j. mella
- Version		: 0.55
- Date			: 12/10/25
+ Version		: 0.56
+ Date			: 15/10/25
  Description	: biblioteca 'gilson'
  GitHub			: https://github.com/casimirdes/gilson
  ============================================================================
@@ -24,6 +24,7 @@
 #define GILSON_H_
 
 #define TESTE_GSON_MODO_JSON 	0  // ainda experimental...
+#define FLAG_NEW_KEY			1  // para erros do tipo 'erGSON_23b' e 'erGSON_30'::: 0=retorno com erro, 1=avança e limpa data
 
 #define CAST_GIL	(uint8_t *)&  // forma bem deselegante de padronizar para fazer o 'casting'
 
@@ -198,7 +199,7 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...);
 int32_t gilson_decode_end(void);
 int32_t gilson_decode_end_crc(uint32_t *crc);
 
-int32_t gilson_decode_valid_map(const uint16_t map_full[][6], const uint16_t tot_chaves, const uint8_t *pack);
+int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chaves, const uint8_t *pack);
 
 int32_t gilson_decode_key(const uint8_t *pack, const uint8_t chave, uint8_t *valor);
 

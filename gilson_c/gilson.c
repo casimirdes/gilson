@@ -20,7 +20,7 @@
 
 // fins de debug
 #define TIPO_DEVICE			1  // 0=microcontrolador, 1=PC
-#define USO_DEBUG_LIB		0  // ativa os prints debug, mais dedicado a PC
+#define USO_DEBUG_LIB		1  // ativa os prints debug, mais dedicado a PC
 #define PRINT_DEBUG			0  // 1 = printa toda vida o debug
 
 // SIZE_TYPE_RAM = como a RAM é 'medida/vista' no sistema: uint8_t, uint16_t, uint32_t, uint64_t, (ex.: PC de 64bits = uint64_t, STM32 = 32bits = uint32_t)
@@ -66,7 +66,7 @@ typedef struct {
 	uint32_t crc;
 	uint32_t crc_out;  // quando decodifica
 	int32_t erro;  // backup de erro geral de cada operacao...
-	uint16_t pos_bytes, pos_bytes2, size_max_pack;  // pos_bytes_bk
+	uint16_t pos_bytes, pos_bytes2, size_max_pack;
 	uint16_t pos_tipo_dl_init, pos_tipo_dl_end, cont_tipo_dinamico, pos_bytes_dl;  // salva posicao do buffer de w/r onde inicia esse tipo_dinamico
 	uint8_t modo;  // 0=padrao, 1=compacto
 	uint8_t ativo, tipo_operacao;
@@ -1287,6 +1287,7 @@ int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t ti
 	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
+		//erro = valida_nome_chave(nome_chave);
 	}
 
 	valor = va_arg(argptr, uint8_t *);
@@ -1354,6 +1355,7 @@ int32_t gilson_encode_mapfix(const uint16_t *map, ...)
 	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
+		//erro = valida_nome_chave(nome_chave);
 	}
 
 	valor = va_arg(argptr, uint8_t *);
@@ -1417,6 +1419,7 @@ int32_t gilson_encode_mapdin(const uint16_t *map, ...)
 	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
+		//erro = valida_nome_chave(nome_chave);
 	}
 
 	valor = va_arg(argptr, uint8_t *);
@@ -1482,6 +1485,7 @@ int32_t gilson_encode_data_null(const uint8_t chave, ...)
 	if(s_gil[ig].modo == GSON_MODO_KV)
     {
         nome_chave = va_arg(argptr, char *);
+        //erro = valida_nome_chave(nome_chave);
     }
 
 	va_end(argptr);
@@ -1662,20 +1666,24 @@ static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 		}
 	}
 
-	s_gil[ig].ativo = 0;
-	s_gil[ig].tipo_operacao = e_OPER_NULL;
+	//s_gil[ig].ativo = 0;
+	//s_gil[ig].tipo_operacao = e_OPER_NULL;
 
 	*crc = s_gil[ig].crc_out;
 
 	deu_erro:
 
+	s_gil[ig].ativo = 0;
+	s_gil[ig].tipo_operacao = e_OPER_NULL;
+
 #if (USO_DEBUG_LIB==1)
 #if (TIPO_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
+	printf_DEBUG("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out, s_gil[ig].chaves_null);
 #else  // PC
-	printf("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u \n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out);
+	printf("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out, s_gil[ig].chaves_null);
 #endif  // #if (TIPO_DEVICE==1)
 #endif  // #if (USO_DEBUG_LIB==1)
+
 
 
 	if(erro==erGSON_OK)
@@ -1692,7 +1700,15 @@ static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	}
 	else
 	{
-		s_gil[ig].erro = erro;
+		// estamos para encerrar o pacote mas ficou com erro que pode ser de agora ou herdado...
+		// mas como vamos finalizar e não queremos travar a estrutura GILSON vamos zerar o erro da estrutura
+		s_gil[ig].erro = erGSON_OK;  // erro
+
+		if(ig==1)
+		{
+			ig = 0;  // volta para o primeiro, pois está aberto!!!
+		}
+
 		return erro;
 	}
 }
@@ -1717,7 +1733,7 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 	uint16_t i, vezes = 1, nbytes=1, temp16, len=0;
 
 	uint16_t cont_list_aX=0, cont_list_bX=0, cont_list_stepX=0, pos_bytes_bk=0;
-	uint8_t tipo_muxX=0, tipo1X=0, tipo2X=0;
+	uint8_t tipo_muxX=0, tipo1X=0, tipo2X=0, flag_chave_fora=0;
 
 	if(s_gil[ig].erro != erGSON_OK)
 	{
@@ -1749,18 +1765,28 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 		goto deu_erro;
 	}
 
+	if(chave >= s_gil[ig].cont_itens2)  // 's_gil[ig].tipo_dinamico==0' ????  && s_gil[ig].tipo_dinamico==0
+	{
+		// quer ler uma chave maior do que a total programado
+		if(FLAG_NEW_KEY==0)
+		{
+			erro = erGSON_23b;
+			goto deu_erro;
+		}
+		else
+		{
+			//return erGSON_OK;
+			flag_chave_fora = 1;
+			goto chave_nova;
+		}
+	}
+
 	if(chave > s_gil[ig].cont_itens)
 	{
 		// quer ler uma chave maior do que a contagem crescente...
 		// vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GSON_MODO_FULL'!!!
+		// OBS: 's_gil[ig].cont_itens' caminha junto conforme o decode crescente
 		erro = erGSON_23;
-		goto deu_erro;
-	}
-
-	if(chave >= s_gil[ig].cont_itens2)  // 's_gil[ig].tipo_dinamico==0' ????  && s_gil[ig].tipo_dinamico==0
-	{
-		// quer ler uma chave maior do que a total programado
-		erro = erGSON_23b;
 		goto deu_erro;
 	}
 
@@ -1881,6 +1907,8 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 
 	//printf("gilson_decode_data_base::: modo:%u, chave:%u, cont_itens:%u, cont_itens2:%u\n", s_gil[ig].modo, chave, s_gil[ig].cont_itens, s_gil[ig].cont_itens2);
 
+	chave_nova:
+
 	// faz validacao do que tinha para com os parametros de entrada
 	if((s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV) && test_valor==1)
 	{
@@ -1913,6 +1941,7 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 
 	if(tipo_muxX!=TIPO_GSON_NULL)
 	{
+		// PASSO 1: encontra tamanho de '*valor'
 		switch(tipo2)
 		{
 		case GSON_tBIT:
@@ -1948,17 +1977,28 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 			goto deu_erro;
 		}
 
+		// PASSO 2: aloca os respectivos bytes em '*valor'
 		if(tipo2 == GSON_tSTRING)
 		{
 			for(i=0; i<vezes; i++)
 			{
-				len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
-				s_gil[ig].pos_bytes += 1;
-				if(test_valor==0)
+				if(flag_chave_fora==0)
 				{
-					memcpy(valor+(i*cont_list_bX), &s_gil[ig].bufr[s_gil[ig].pos_bytes], len);
+					len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
+					s_gil[ig].pos_bytes += 1;
+					if(test_valor==0)
+					{
+						memcpy(valor+(i*cont_list_bX), &s_gil[ig].bufr[s_gil[ig].pos_bytes], len);
+					}
+					s_gil[ig].pos_bytes += len;
 				}
-				s_gil[ig].pos_bytes += len;
+				else
+				{
+					// só limpa....
+					len = cont_list_bX;
+					memset(valor+(i*cont_list_bX), 0x00, len);
+				}
+
 			}
 		}
 		else if(tipo2 == GSON_tBIT)
@@ -1976,21 +2016,39 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 				// logo se eu quero x[2][3] tenho que dar os offset com base nos valores máximos (250 elementos cada linha)
 				for(i=0; i<cont_list_aX; i++)
 				{
-					temp16 = i*cont_list_stepX*nbytes;  // passos em cada linha da matriz
-					if(test_valor==0)
+					if(flag_chave_fora==0)
 					{
-						memcpy(valor+temp16, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*cont_list_bX);
+						temp16 = i*cont_list_stepX*nbytes;  // passos em cada linha da matriz
+						if(test_valor==0)
+						{
+							memcpy(valor+temp16, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*cont_list_bX);
+						}
+						s_gil[ig].pos_bytes += nbytes*cont_list_bX;
 					}
-					s_gil[ig].pos_bytes += nbytes*cont_list_bX;
+					else
+					{
+						// só limpa....
+						temp16 = i*cont_list_stepX*nbytes;  // passos em cada linha da matriz
+						memset(valor+temp16, 0x00, nbytes*cont_list_bX);
+					}
+
 				}
 			}
 			else
 			{
-				if(test_valor==0)
+				if(flag_chave_fora==0)
 				{
-					memcpy(valor, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*vezes);
+					if(test_valor==0)
+					{
+						memcpy(valor, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*vezes);
+					}
+					s_gil[ig].pos_bytes += nbytes*vezes;
 				}
-				s_gil[ig].pos_bytes += nbytes*vezes;
+				else
+				{
+					// só limpa....
+					memset(valor, 0x00, nbytes*vezes);
+				}
 			}
 		}
 	}
@@ -2003,9 +2061,12 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 
 	if(erro==erGSON_OK)
 	{
-		s_gil[ig].cont_itens += 1;
+		if(flag_chave_fora==0)
+		{
+			s_gil[ig].cont_itens += 1;
 
-		s_gil[ig].chave_atual = chave;
+			s_gil[ig].chave_atual = chave;
+		}
 	}
 	else
 	{
@@ -2307,9 +2368,17 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 	if(chave >= s_gil[ig].cont_itens2)
 	{
 		// quer ler uma chave maior do que a contagem total que é decodificada em decode_init e aloca em 'cont_itens2'
-		// nesse caso não tem como prosseguir!!!!
-		erro = erGSON_30;
-		goto deu_erro;
+		// quer ler uma chave maior do que a total programado
+		if(FLAG_NEW_KEY==0)
+		{
+			erro = erGSON_30;
+			goto deu_erro;
+		}
+		else
+		{
+			return erGSON_OK;
+			//nao temos info sobre o tipo no FULL... salvo via mapa....
+		}
 	}
 
 
@@ -2961,6 +3030,7 @@ int32_t gilson_decode(const uint8_t chave, ...)
 	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
+		//erro = valida_nome_chave(nome_chave);
 	}
 
 	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
@@ -3020,7 +3090,7 @@ int32_t gilson_decode(const uint8_t chave, ...)
 
 
 // só funciona para modos FULL
-int32_t gilson_decode_valid_map(const uint16_t map_full[][6], const uint16_t tot_chaves, const uint8_t *pack)
+int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chaves, const uint8_t *pack)
 {
 	int32_t erro=erGSON_OK, pos_bytes=0;
 	uint8_t modo=0, i, dummy;
@@ -3032,6 +3102,13 @@ int32_t gilson_decode_valid_map(const uint16_t map_full[][6], const uint16_t tot
 
 	if(modo == GSON_MODO_FULL || modo == GSON_MODO_KV)
 	{
+		if(tot_chaves>s_gil[ig].cont_itens2 && FLAG_NEW_KEY==1)
+		{
+			// se tudo certo o pacote é o mesmo porem uma nova versao com mais chaves... que vamos ignorar as novas
+			tot_chaves = s_gil[ig].cont_itens2;
+		}
+
+
 		if(tot_chaves == s_gil[ig].cont_itens2)
 		{
 			for(i=0; i<s_gil[ig].cont_itens2; i++)
@@ -3094,6 +3171,7 @@ int32_t gilson_decode_mapfix(const uint16_t *map, ...)
 	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
+		//erro = valida_nome_chave(nome_chave);
 	}
 
 	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
@@ -3173,6 +3251,7 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
+		//erro = valida_nome_chave(nome_chave);
 	}
 
 	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
