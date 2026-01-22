@@ -2,52 +2,51 @@ from enum import IntEnum
 
 # constantes globais:
 """
-GSON_MODO_ZIP = 0  # é cru, sem nada, somente a data bruta, tem 1 byte adicional que é [0]=modo
-GSON_MODO_FULL = 1  # modo padão com offset, crc, identificador
-GSON_MODO_KV = 2  # modo GSON_MODO_FULL + KV ala key:value chave:valor salva nome em string das chaves ala JSON da vida
-GSON_MODO_KV_ZIP = 3  # modo GSON_MODO_ZIP porem salva os nomes das chaves ala JSON da vida
-GSON_MODO_JSON = 4  # caso particular de encode/decode de um JSON estático *** só usa com funcoes "xxxxx_json" experimental...
-GSON_MODO_MAX = 5  # indica máximo, para ser válido tem que ser menor que isso
+GIL_MODO_ZIP = 0  # é cru, sem nada, somente a data bruta, tem 1 byte adicional que é [0]=modo
+GIL_MODO_FULL = 1  # modo padão com offset, crc, identificador
+GIL_MODO_KV = 2  # modo GIL_MODO_FULL + KV ala key:value chave:valor salva nome em string das chaves ala JSON da vida
+GIL_MODO_KV_ZIP = 3  # modo GIL_MODO_ZIP porem salva os nomes das chaves ala JSON da vida
+GIL_MODO_JSON = 4  # caso particular de encode/decode de um JSON estático *** só usa com funcoes "xxxxx_json" experimental...
+GIL_MODO_MAX = 5  # indica máximo, para ser válido tem que ser menor que isso
 
 
-GSON_SINGLE = 0  # valor unico
-GSON_LIST = 1  # é no formato lista, [u16] mas até 64k
-GSON_MTX2D = 2  # é no formato matriz, max 2 dimenções!!! [u8][u16] mas jamais pode passar de 64k!!!!
-GSON_MAX = 3  # indica máximo, para ser válido tem que ser menor que isso
+GIL_SINGLE = 0  # valor unico
+GIL_LIST = 1  # é no formato lista, [u16] mas até 64k
+GIL_MTX2D = 2  # é no formato matriz, max 2 dimenções!!! [u8][u16] mas jamais pode passar de 64k!!!!
+GIL_MAX = 3  # indica máximo, para ser válido tem que ser menor que isso
 
 # reserva o '0' para outros usos...
-GSON_tBIT = 1
-GSON_tINT8 = 2
-GSON_tUINT8 = 3
-GSON_tINT16: Final[int] = 4  #GSON_tINT16 = 4
-GSON_tUINT16 = 5
-GSON_tINT32 = 6
-GSON_tUINT32 = 7
-GSON_tINT64 = 8
-GSON_tUINT64 = 9
-GSON_tFLOAT32 = 10
-GSON_tFLOAT64 = 11
-GSON_tSTRING = 12
-GSON_tMAX = 13  # indica máximo, para ser válido tem que ser menor que isso
+GIL_tBIT = 1
+GIL_tINT8 = 2
+GIL_tUINT8 = 3
+GIL_tINT16: Final[int] = 4  #GIL_tINT16 = 4
+GIL_tUINT16 = 5
+GIL_tINT32 = 6
+GIL_tUINT32 = 7
+GIL_tINT64 = 8
+GIL_tUINT64 = 9
+GIL_tFLOAT32 = 10
+GIL_tFLOAT64 = 11
+GIL_tSTRING = 12
+GIL_tMAX = 13  # indica máximo, para ser válido tem que ser menor que isso
 
 OFFSET_MODO_ZIP = 2
 OFFSET_MODO_FULL = 8
 
 PACK_MAX_BYTES = 65536  # max 65536 bytes um pacote gilson
 
-LEN_MAX_CHAVE_NOME = 16  # tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GSON_MODO_KV'
-LEN_MAX_STRING_DATA = 255  # tamanho maximo de um item que é do tipo string, seja 'GSON_SINGLE' ou 'GSON_LIST'
-
 LEN_PACKS_GILSON = 2  # 2 pacotes manipulaveis "ao mesmo tempo", se abriu o segundo tem que fechar para voltar para o primeiro!!!
 
-TIPO_GSON_LDIN = 0b11100000  # lista dinâmica de dados de diversos tipos, limitado até 255 tipos e não pode ter lista de lista
-TIPO_GSON_NULL = 0b11111111  # quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
+TIPO_GIL_LDIN = 0b11100000  # lista dinâmica de dados de diversos tipos, limitado até 255 tipos e não pode ter lista de lista
+TIPO_GIL_NULL = 0b11111111  # quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
 
 e_OPER_NULL = 0  # nenhuma ainda...
 e_OPER_ENCODE = 1  # operação de encode()
 e_OPER_DECODE = 2  # operação de decode()
 
-LIMIT_GSON_KEYS = 255  # até 255 chaves cada pacote gilson, (0 a 254)
+GIL_LIMIT_KEY_NAME = 16  # tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GIL_MODO_KV'
+GIL_LIMIT_STRING = 255  # tamanho maximo de um item que é do tipo string, seja 'GIL_SINGLE' ou 'GIL_LIST'
+GIL_LIMIT_KEYS = 255  # até 255 chaves cada pacote gilson, (0 a 254)
 """
 
 
@@ -57,29 +56,28 @@ class Const(IntEnum):
 
     PACK_MAX_BYTES = 65536  # max 65536 bytes um pacote gilson
 
-    LEN_MAX_CHAVE_NOME = 16  # tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GSON_MODO_KV'
-    LEN_MAX_STRING_DATA = 255  # tamanho maximo de um item que é do tipo string, seja 'GSON_SINGLE' ou 'GSON_LIST'
-
     LEN_PACKS_GILSON = 2  # 2 pacotes manipulaveis "ao mesmo tempo", se abriu o segundo tem que fechar para voltar para o primeiro!!!
 
-    TIPO_GSON_LDIN = 0b11100000  # lista dinâmica de dados de diversos tipos, limitado até 255 tipos e não pode ter lista de lista
-    TIPO_GSON_NULL = 0b11111111  # quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
+    TIPO_GIL_LDIN = 0b11100000  # lista dinâmica de dados de diversos tipos, limitado até 255 tipos e não pode ter lista de lista
+    TIPO_GIL_NULL = 0b11111111  # quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
 
     e_OPER_NULL = 0  # nenhuma ainda...
     e_OPER_ENCODE = 1  # operação de encode()
     e_OPER_DECODE = 2  # operação de decode()
 
-    LIMIT_GSON_KEYS = 255  # até 255 chaves cada pacote gilson, (0 a 254)
+    GIL_LIMIT_KEYS = 255  # até 255 chaves cada pacote gilson, (0 a 254)
+    GIL_LIMIT_STRING = 255  # tamanho maximo de um item que é do tipo string, seja 'GIL_SINGLE' ou 'GIL_LIST'
+    GIL_LIMIT_KEY_NAME = 16  # tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GIL_MODO_KV'
 
 
 class Modo(IntEnum):
     """
-    GSON_MODO_ZIP = 0  # é cru, sem nada, somente a data bruta, tem 1 byte adicional que é [0]=modo
-    GSON_MODO_FULL = 1  # modo padão com offset, crc, identificador
-    GSON_MODO_KV = 2  # modo GSON_MODO_FULL + KV ala key:value chave:valor salva nome em string das chaves ala JSON da vida
-    GSON_MODO_KV_ZIP = 3  # modo GSON_MODO_ZIP porem salva os nomes das chaves ala JSON da vida
-    GSON_MODO_JSON = 4  # caso particular de encode/decode de um JSON estático *** só usa com funcoes "xxxxx_json" experimental...
-    GSON_MODO_MAX = 5  # indica máximo, para ser válido tem que ser menor que isso
+    GIL_MODO_ZIP = 0  # é cru, sem nada, somente a data bruta, tem 1 byte adicional que é [0]=modo
+    GIL_MODO_FULL = 1  # modo padão com offset, crc, identificador
+    GIL_MODO_KV = 2  # modo GIL_MODO_FULL + KV ala key:value chave:valor salva nome em string das chaves ala JSON da vida
+    GIL_MODO_KV_ZIP = 3  # modo GIL_MODO_ZIP porem salva os nomes das chaves ala JSON da vida
+    GIL_MODO_JSON = 4  # caso particular de encode/decode de um JSON estático *** só usa com funcoes "xxxxx_json" experimental...
+    GIL_MODO_MAX = 5  # indica máximo, para ser válido tem que ser menor que isso
     """
     ZIP = 0
     FULL = 1
@@ -90,10 +88,10 @@ class Modo(IntEnum):
 
 class Tipo1(IntEnum):
     """
-    GSON_SINGLE = 0  # valor unico
-    GSON_LIST = 1  # é no formato lista, [u16] mas até 64k
-    GSON_MTX2D = 2  # é no formato matriz, max 2 dimenções!!! [u8][u16] mas jamais pode passar de 64k!!!!
-    GSON_MAX = 3  # indica máximo, para ser válido tem que ser menor que isso
+    GIL_SINGLE = 0  # valor unico
+    GIL_LIST = 1  # é no formato lista, [u16] mas até 64k
+    GIL_MTX2D = 2  # é no formato matriz, max 2 dimenções!!! [u8][u16] mas jamais pode passar de 64k!!!!
+    GIL_MAX = 3  # indica máximo, para ser válido tem que ser menor que isso
     """
     SINGLE = 0
     LIST = 1
@@ -104,19 +102,19 @@ class Tipo1(IntEnum):
 class Tipo2(IntEnum):
     """
     # reserva o '0' para outros usos...
-    GSON_tBIT = 1
-    GSON_tINT8 = 2
-    GSON_tUINT8 = 3
-    GSON_tINT16 = 4
-    GSON_tUINT16 = 5
-    GSON_tINT32 = 6
-    GSON_tUINT32 = 7
-    GSON_tINT64 = 8
-    GSON_tUINT64 = 9
-    GSON_tFLOAT32 = 10
-    GSON_tFLOAT64 = 11
-    GSON_tSTRING = 12
-    GSON_tMAX = 13  # indica máximo, para ser válido tem que ser menor que isso
+    GIL_tBIT = 1
+    GIL_tINT8 = 2
+    GIL_tUINT8 = 3
+    GIL_tINT16 = 4
+    GIL_tUINT16 = 5
+    GIL_tINT32 = 6
+    GIL_tUINT32 = 7
+    GIL_tINT64 = 8
+    GIL_tUINT64 = 9
+    GIL_tFLOAT32 = 10
+    GIL_tFLOAT64 = 11
+    GIL_tSTRING = 12
+    GIL_tMAX = 13  # indica máximo, para ser válido tem que ser menor que isso
     """
     tBIT = 1
     tINT8 = 2
@@ -162,8 +160,8 @@ class Er(IntEnum):
     er_1 = -2  # encode_init() segunda classe s_gil tambem já está ativa
     er_2 = -3  # encode_base() que usar e não tem pacote ativo, iniciado em encode_init()
     er_3 = -4  # encode_base() erro de Tipo1 inválido
-    er_4 = -5  # encode_base() erro limite maior que LIMIT_GSON_KEYS
-    er_5 = -6  # encode_base() modo KV e nome da chave maior que LEN_MAX_CHAVE_NOME
+    er_4 = -5  # encode_base() erro limite maior que GIL_LIMIT_KEYS
+    er_5 = -6  # encode_base() modo KV e nome da chave maior que GIL_LIMIT_KEY_NAME
     er_6 = -7  # encode_base() uma lista e cont_list_a==0
     er_7 = -8  # encode_base() uma lista de string e cont_list_b==0
     er_8 = -9  # encode_base() uma matriz e cont_list_X errados
@@ -226,3 +224,4 @@ class Er(IntEnum):
     er_61 = -63  # decode_base() chave ja foi adicionada no decode
     er_62 = -64  # decode_dl_init() quer ler uma chave maior do que a total programado
     er_63 = -68  # encode_dl_init() tipo do pacote não é FULL
+    er_64 = -89  # decode_key() erro ou tipo do pacote não é FULL

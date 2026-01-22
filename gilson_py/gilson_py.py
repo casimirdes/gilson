@@ -1,13 +1,10 @@
-#!/usr/local/bin/python3
-# -*- coding: utf-8 -*-
-
 """
  ============================================================================
  Name			: gilson_py
  Author			: matheus j. mella
- Version		: 0.54
- Date			: 04/10/25
- Description 	: biblioteca 'gilson'
+ Version		: 0.55
+ Date           : 20/01/26
+ Description    : biblioteca 'gilson'
  GitHub			: https://github.com/casimirdes/gilson
  ============================================================================
 
@@ -33,6 +30,9 @@ DATA: 04/10/25
     separado constantes em arquivo '_defines.py'
     criado 'IntEnum' para proteção e organização
     OBS: saiu um pouco do padrão das variáveis do C
+DATA: 18/01/26
+    remapeamento de nomes "GSON_" -> "GIL_"
+    ajuste em 'decode_key()'
 """
 
 FLAG_USE_NUMPY = False  # False = usa lib 'array', True = usa a lib "numpy"
@@ -42,15 +42,15 @@ if FLAG_USE_NUMPY:
 else:
     import array
 import struct
-from enum import IntEnum
+#from enum import IntEnum
 from dataclasses import dataclass, field, fields
 from typing import Final
 
 # lib interna
 from ._defines import Const, Er, Modo, Tipo1, Tipo2
 
-#USO_DEBUG_LIB = True  # printa ou não mensagens de debug...
-USO_DEBUG_LIB: Final[bool] = True
+#GIL_DEBUG_LIB = True  # printa ou não mensagens de debug...
+GIL_DEBUG_LIB: Final[bool] = False
 
 # constantes globais:
 # foi tudo deslocado para '_defines.py'
@@ -264,7 +264,7 @@ class Gilson:
 
             self.s_gil[self.ig].ativo = True
 
-        if USO_DEBUG_LIB:
+        if GIL_DEBUG_LIB:
             print(f"DEBUG encode_init::: ig:{self.ig}, erro:{erro}, modo:{self.s_gil[self.ig].modo}, pos_bytes:{self.s_gil[self.ig].pos_bytes}, cont_itens:{self.s_gil[self.ig].cont_itens}")
 
         self.s_gil[self.ig].erro = erro
@@ -310,7 +310,7 @@ class Gilson:
         self.s_gil[self.ig].ativo = False
         self.s_gil[self.ig].tipo_operacao = Const.e_OPER_NULL
 
-        if USO_DEBUG_LIB:
+        if GIL_DEBUG_LIB:
             print(f"DEBUG encode_end_base::: erro:{erro}, ig:{self.ig}, modo:{self.s_gil[self.ig].modo} pos_bytes:{self.s_gil[self.ig].pos_bytes}, cont_itens:{self.s_gil[self.ig].cont_itens} crc:{self.s_gil[self.ig].crc} cru:{self.s_gil[self.ig].bufw[0:8]}")
 
         # retorna 3 dados: total de bytes, crc e buffer cru...
@@ -365,7 +365,7 @@ class Gilson:
                 erro = Er.er_58
                 goto_deu_erro()
 
-            if self.s_gil[self.ig].cont_itens >= Const.LIMIT_GSON_KEYS:
+            if self.s_gil[self.ig].cont_itens >= Const.GIL_LIMIT_KEYS:
                 erro = Er.er_4
                 goto_deu_erro()
 
@@ -386,7 +386,7 @@ class Gilson:
             if self.CheckModeKV():
                 nome_chave_b = nome_chave.encode(encoding='utf-8')
                 len_chave = len(nome_chave_b)
-                if len_chave > Const.LEN_MAX_CHAVE_NOME:
+                if len_chave > Const.GIL_LIMIT_KEY_NAME:
                     erro = Er.er_5
                     goto_deu_erro()
                 else:
@@ -408,7 +408,7 @@ class Gilson:
                 self.s_gil[self.ig].pos_bytes += 1
                 self.s_gil[self.ig].bufw += b
 
-            if tipo_mux != Const.TIPO_GSON_NULL:
+            if tipo_mux != Const.TIPO_GIL_NULL:
                 if tipo1 == Tipo1.LIST:
                     if cont_list_a == 0:
                         erro = Er.er_6
@@ -426,7 +426,7 @@ class Gilson:
                         if cont_list_b == 0:
                             erro = Er.er_7
                             goto_deu_erro()
-                        elif cont_list_b > Const.LEN_MAX_STRING_DATA:
+                        elif cont_list_b > Const.GIL_LIMIT_STRING:
                             erro = Er.er_STRMAX
                             goto_deu_erro()
                         else:
@@ -461,7 +461,7 @@ class Gilson:
                         if cont_list_a == 0:
                             erro = Er.er_9
                             goto_deu_erro()
-                        elif cont_list_a > Const.LEN_MAX_STRING_DATA:
+                        elif cont_list_a > Const.GIL_LIMIT_STRING:
                             erro = Er.er_STRMAX
                             goto_deu_erro()
                         else:
@@ -594,7 +594,7 @@ class Gilson:
                 erro = Er.er_DESC1
                 self.s_gil[self.ig].erro = erro
 
-        if USO_DEBUG_LIB:
+        if GIL_DEBUG_LIB:
             if erro != Er.er_OK:
                 print(f"DEBUG encode_base::: ig:{self.ig}, ERRO:{erro}, modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
 
@@ -752,7 +752,7 @@ class Gilson:
 
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
-            if USO_DEBUG_LIB:
+            if GIL_DEBUG_LIB:
                 print(f"DEBUG encode_dl_init::: ig:{self.ig}, ERRO:{erro}, modo:{self.s_gil[self.ig].modo}, chave:{chave}, tam_list:{tam_list}, nitens:{nitens}")
             #return erro
             raise ValueError(f"erro encode_dl_init:{erro}")
@@ -790,7 +790,7 @@ class Gilson:
                 # lembrando que no padrao normal agora viria o 'tipo_mux'
                 # 0baaabbbbb = a:tipo1, b=tipo2
                 b = bytearray(3)
-                b[0] = Const.TIPO_GSON_LDIN
+                b[0] = Const.TIPO_GIL_LDIN
                 b[1] = tam_list
                 b[2] = nitens
                 self.s_gil[self.ig].pos_bytes += 3
@@ -813,7 +813,7 @@ class Gilson:
 
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
-            if USO_DEBUG_LIB:
+            if GIL_DEBUG_LIB:
                 print(f"DEBUG valid_encode_dl::: ig:{self.ig}, ERRO:{erro}")
             # return erro
             raise ValueError(f"erro valid_encode_dl:{erro}")
@@ -878,7 +878,7 @@ class Gilson:
 
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
-            if USO_DEBUG_LIB:
+            if GIL_DEBUG_LIB:
                 print(f"DEBUG encode_dl_add::: ig:{self.ig}, ERRO:{erro}")
             # return erro
             raise ValueError(f"erro encode_dl_add:{erro}")
@@ -934,7 +934,7 @@ class Gilson:
 
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
-            if USO_DEBUG_LIB:
+            if GIL_DEBUG_LIB:
                 print(f"DEBUG encode_dl_data::: ig:{self.ig}, ERRO:{erro}, item:{item}")
             # return erro
             raise ValueError(f"erro encode_dl_data:{erro}")
@@ -971,7 +971,7 @@ class Gilson:
 
         self.s_gil[self.ig].tipo_dinamico = 0  # finalizando o tratar um tipo dinamico
 
-        if USO_DEBUG_LIB:
+        if GIL_DEBUG_LIB:
             print(f"DEBUG encode_dl_end::: ig:{self.ig}, ERRO:{erro}, modo:{self.s_gil[self.ig].modo}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}, cont_tipo_dinamico:{self.s_gil[self.ig].cont_tipo_dinamico}")
 
         return erro
@@ -1166,7 +1166,7 @@ class Gilson:
 
         self.s_gil[self.ig].erro = erro
 
-        if USO_DEBUG_LIB:
+        if GIL_DEBUG_LIB:
             print(f"DEBUG gilson_get_init::: ig:{self.ig}, erro:{erro},  modo:{self.s_gil[self.ig].modo},  pos_bytes:{self.s_gil[self.ig].pos_bytes},  cont_itens:{self.s_gil[self.ig].cont_itens}, cru:{self.s_gil[self.ig].bufr[0:8]}, crc:{crc1}=={crc2},  pos_bytes2:{self.s_gil[self.ig].pos_bytes2}  cont_itens2:{self.s_gil[self.ig].cont_itens2}")
 
         return erro, modo
@@ -1201,7 +1201,7 @@ class Gilson:
         else:
             erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
 
-        if USO_DEBUG_LIB:
+        if GIL_DEBUG_LIB:
             print(f"DEBUG gilson_get_end::: ig:{self.ig}, erro:{erro}, modo:{self.s_gil[self.ig].modo}, pos_bytes:{self.s_gil[self.ig].pos_bytes}=={self.s_gil[self.ig].pos_bytes2}, cont_itens:{self.s_gil[self.ig].cont_itens}=={self.s_gil[self.ig].cont_itens2}, crc_out:{self.s_gil[self.ig].crc_out}")
 
         # retorna: erro, total de bytes, crc e buffer cru...
@@ -1232,7 +1232,7 @@ class Gilson:
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
             if erro != 0:
-                if USO_DEBUG_LIB:
+                if GIL_DEBUG_LIB:
                     print(f"DEBUG gilson_get_data::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
             raise ValueError(f"erro encode_base:{erro}")
 
@@ -1259,7 +1259,7 @@ class Gilson:
 
             if chave > self.s_gil[self.ig].cont_itens:
                 # quer add uma chave maior do que a contagem crescente...
-                # vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GSON_MODO_FULL'!!!
+                # vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GIL_MODO_FULL'!!!
                 erro = Er.er_19
                 goto_deu_erro()
 
@@ -1280,7 +1280,7 @@ class Gilson:
                 data = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + len_chave]
                 self.s_gil[self.ig].pos_bytes += len_chave
                 nome_chave = data.decode(encoding='utf-8')
-                # len vai ser menor que 'LEN_MAX_CHAVE_NOME' caracteres...
+                # len vai ser menor que 'GIL_LIMIT_KEY_NAME' caracteres...
 
             if self.CheckModeFULL():
                 # tipo_mux = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes] == tipo_mux
@@ -1422,7 +1422,7 @@ class Gilson:
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
             if erro != Er.er_OK:
-                if USO_DEBUG_LIB:
+                if GIL_DEBUG_LIB:
                     print(f"DEBUG decode_base_full::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
             raise ValueError(f"erro encode_base:{erro}")
 
@@ -1445,7 +1445,7 @@ class Gilson:
 
             if chave > self.s_gil[self.ig].cont_itens2:
                 # quer ler uma chave maior do que a contagem total
-                # vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GSON_MODO_FULL'!!!
+                # vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GIL_MODO_FULL'!!!
                 erro = Er.er_26
                 goto_deu_erro()
 
@@ -1474,7 +1474,7 @@ class Gilson:
                         data = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + len_chave]
                         self.s_gil[self.ig].pos_bytes += len_chave
                         nome_chave = data.decode(encoding='utf-8')
-                        # len vai ser menor que 'LEN_MAX_CHAVE_NOME' caracteres...
+                        # len vai ser menor que 'GIL_LIMIT_KEY_NAME' caracteres...
                     # não estamos no modo dinamico lista
                     pos_bytes = self.s_gil[self.ig].pos_bytes
                 else:
@@ -1486,7 +1486,7 @@ class Gilson:
                 tipo_mux = self.s_gil[self.ig].bufr[pos_bytes]
                 pos_bytes += 1
 
-                if tipo_mux != Const.TIPO_GSON_NULL:
+                if tipo_mux != Const.TIPO_GIL_NULL:
                     tipo1 = tipo_mux >> 5
                     tipo2 = tipo_mux & 0b11111
 
@@ -1728,18 +1728,29 @@ class Gilson:
             return self.decode_base_full(chave)
 
     def decode_key(self, pack: bytes | bytearray, chave: int):
+        """
+        somente para 'GIL_MODO_FULL'
+        :param pack: pacote completo do gilson
+        :param chave: qual chave quer extrair
+        :return:
+        tuple: erro, valor
+        """
         erro = Er.er_OK
+        valor = None
         erro, modo = self.decode_init(pack)
         if erro == 0 and modo == Modo.FULL:
-            erro = self.decode(chave)
+            erro, valor = self.decode(chave)
             ret = self.decode_end()  # erro, total de bytes, crc e buffer cru...
-            if erro == 0:
-                erro = ret[0]
+            if erro != Er.er_OK or ret[0] != Er.er_OK:
+                if erro == Er.er_OK:
+                    erro = ret[0]
+        else:
+            erro = Er.er_64
 
-        if USO_DEBUG_LIB:
+        if GIL_DEBUG_LIB:
             print(f"DEBUG decode_key::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}|{modo}, chave:{chave}")
 
-        return erro
+        return erro, valor
 
     def decode_dl_init(self, chave: int):
         # OBS: não foi testado ainda em modo KV
@@ -1748,7 +1759,7 @@ class Gilson:
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
             if erro != Er.er_OK:
-                if USO_DEBUG_LIB:
+                if GIL_DEBUG_LIB:
                     print(f"DEBUG decode_dl_init::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}")
             raise ValueError(f"erro encode_base:{erro}")
 
@@ -1766,7 +1777,7 @@ class Gilson:
                 erro = Er.er_62
                 goto_deu_erro()
 
-            if self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes] == Const.TIPO_GSON_LDIN:
+            if self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes] == Const.TIPO_GIL_LDIN:
 
                 self.s_gil[self.ig].tipo_operacao = Const.e_OPER_DECODE
                 self.s_gil[self.ig].tipo_dinamico = 1
@@ -1857,7 +1868,7 @@ class Gilson:
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
             if erro != Er.er_OK:
-                if USO_DEBUG_LIB:
+                if GIL_DEBUG_LIB:
                     print(f"DEBUG decode_dl_data::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, item:{item}, chave_dl:{self.s_gil[self.ig].chave_dl}")
             #return erro, multi_data
             raise ValueError(f"erro encode_base:{erro}")
@@ -1906,7 +1917,7 @@ class Gilson:
             erro = Er.er_56
 
         if erro != Er.er_OK:
-            if USO_DEBUG_LIB:
+            if GIL_DEBUG_LIB:
                 print(f"DEBUG decode_dl_end::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}, tipo_dinamico:{self.s_gil[self.ig].cont_tipo_dinamico}")
 
         self.s_gil[self.ig].tipo_dinamico = 0  # finalizando o tratar um tipo dinamico
@@ -2087,4 +2098,8 @@ class Gilson:
     def decode_mf64(self, chave: int, cont_list_a: int, cont_list_b: int, cont_list_step: int):
         return self.decode_base(chave, Tipo1.MTX2D, Tipo2.tFLOAT64, cont_list_a, cont_list_b, cont_list_step)
 
+    def decode_valid_map(self, map_full: list | tuple, tot_chaves: int, pack: bytes | bytearray):
+        # int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chaves, const uint8_t *pack);
+        # fazerrrrr
+        ...
 

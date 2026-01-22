@@ -18,40 +18,24 @@
 
 #include "gilson.h"
 
-// fins de debug
-#define TIPO_DEVICE			1  // 0=microcontrolador, 1=PC
-#define USO_DEBUG_LIB		1  // ativa os prints debug, mais dedicado a PC
-#define PRINT_DEBUG			0  // 1 = printa toda vida o debug
+#if (GIL_TYPE_DEVICE==1)
 
-// SIZE_TYPE_RAM = como a RAM é 'medida/vista' no sistema: uint8_t, uint16_t, uint32_t, uint64_t, (ex.: PC de 64bits = uint64_t, STM32 = 32bits = uint32_t)
-
-#if (TIPO_DEVICE==1)
-
-#define SIZE_TYPE_RAM		uint64_t
-
-// ...
+// ... alguma lib específica...
 
 #else
 
-#define SIZE_TYPE_RAM		uint32_t
+// ... alguma lib específica...
 
-// ...
-
-#endif  // #if (TIPO_DEVICE==1)
-
-
+#endif  // #if (GIL_TYPE_DEVICE==1)
 
 #define LEN_PACKS_GILSON	2  // 2 pacotes manipulaveis "ao mesmo tempo", se abriu o segundo tem que fechar para voltar para o primeiro!!!
 
 #define OFFSET_MODO_ZIP		2
 #define OFFSET_MODO_FULL	8
 
-#define LEN_MAX_CHAVE_NOME	16  // tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GSON_MODO_KV'
+#define TIPO_GIL_LDIN		0b11100000  // lista dinâmica de dados de diversos tipos, limitado até 255 tipos e não pode ter lista de lista
+#define TIPO_GIL_NULL		0b11111111  // quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
 
-#define TIPO_GSON_LDIN		0b11100000  // lista dinâmica de dados de diversos tipos, limitado até 255 tipos e não pode ter lista de lista
-#define TIPO_GSON_NULL		0b11111111  // quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
-
-#define LEN_MAX_STRING		255  // tamanho maximo de um item que é do tipo string, seja 'GSON_SINGLE' ou 'GSON_LIST'
 
 enum e_TIPO_OPER  // uso de 'tipo_operacao'
 {
@@ -62,7 +46,7 @@ enum e_TIPO_OPER  // uso de 'tipo_operacao'
 
 // estrutura de controle da lib gilson
 typedef struct {
-	SIZE_TYPE_RAM end_ram;
+	GIL_SIZE_RAM end_ram;
 	uint32_t crc;
 	uint32_t crc_out;  // quando decodifica
 	int32_t erro;  // backup de erro geral de cada operacao...
@@ -114,15 +98,15 @@ static uint32_t gil_crc(uint32_t crc, const uint8_t *buffer, const uint16_t size
 
 int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t size_max_pack)
 {
-	SIZE_TYPE_RAM end_ram=0;
-	int32_t erro=erGSON_OK;
+	GIL_SIZE_RAM end_ram=0;
+	int32_t erro=erGIL_OK;
 
 	// queremos codificar um pacote...
 
 	if(s_gil[ig].ativo==1)
 	{
-		erro = erGSON_0;
-		end_ram = (SIZE_TYPE_RAM)pack;  // endereço na ram????
+		erro = erGIL_0;
+		end_ram = (GIL_SIZE_RAM)pack;  // endereço na ram????
 
 		// atual 'ig' está ativo ja... não tem o que fazer... vamos consultar o segundo
 		if(ig==0)
@@ -130,23 +114,23 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 			// vamos ver o segundo...
 			if(s_gil[ig+1].ativo==1)
 			{
-				erro = erGSON_1;
+				erro = erGIL_1;
 				// não tem o que fazer.... aborta a missao!!!!
 			}
 			else if(end_ram==s_gil[ig].end_ram)
 			{
 				// quer utililzar o mesmo buffer geral na RAM????? não tem fazer isso...
-				erro = erGSON_2;
+				erro = erGIL_2;
 				// não tem o que fazer.... aborta a missao!!!!
 			}
 			else
 			{
-				erro = erGSON_OK;
+				erro = erGIL_OK;
 				ig=1;  // vai para o segundo e esse passar ser o atual global da lib
 			}
 		}
 
-		if(erro!=erGSON_OK)
+		if(erro!=erGIL_OK)
 		{
 			goto deu_erro;
 		}
@@ -154,22 +138,22 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 
 	memset(&s_gil[ig], 0x00, sizeof(s_gil[ig]));
 
-	if(modo_ == GSON_MODO_JSON)
+	if(modo_ == GIL_MODO_JSON)
 	{
-		erro = erGSON_eJSON;
+		erro = erGIL_eJSON;
 		goto deu_erro;
 	}
 
 	s_gil[ig].tipo_operacao = e_OPER_ENCODE;
 	s_gil[ig].modo = modo_;
 	s_gil[ig].bufw = pack;
-	s_gil[ig].end_ram = (SIZE_TYPE_RAM)pack;  // endereço na ram????
+	s_gil[ig].end_ram = (GIL_SIZE_RAM)pack;  // endereço na ram????
 	s_gil[ig].size_max_pack = size_max_pack;
 	//memset(s_gil[ig].bufw, 0x00, sizeof(*s_gil[ig].bufw));
 
 	s_gil[ig].cont_itens=0;
 
-	if(s_gil[ig].modo == GSON_MODO_ZIP || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		s_gil[ig].pos_bytes = OFFSET_MODO_ZIP;  // offset
 	}
@@ -182,13 +166,13 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 
 	s_gil[ig].erro = erro;
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 		printf_DEBUG("DEBUG gilson_encode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
 #else  // PC
 		printf("DEBUG gilson_encode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	s_gil[ig].ativo = 1;  // ativa a estrutura 'ig' da vez!!!
 	return erro;
@@ -197,7 +181,7 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 // calcula e retorna crc independente do 'modo'
 static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 	s_gil[ig].crc=0;
 
 
@@ -213,11 +197,11 @@ static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	// [7] 1b = quantos elementos geral (não soma as listas, trata como 1) até 255 elementos/itens
 	// [8::] data
 
-	if(s_gil[ig].erro != erGSON_OK || s_gil[ig].tipo_operacao != e_OPER_ENCODE)
+	if(s_gil[ig].erro != erGIL_OK || s_gil[ig].tipo_operacao != e_OPER_ENCODE)
 	{
-		if(s_gil[ig].erro == erGSON_OK)
+		if(s_gil[ig].erro == erGIL_OK)
 		{
-			s_gil[ig].erro = erGSON_OPER;
+			s_gil[ig].erro = erGIL_OPER;
 		}
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		s_gil[ig].pos_bytes = 0;  // pra garantir que não deu nada...
@@ -228,7 +212,7 @@ static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	{
 		s_gil[ig].bufw[0] = s_gil[ig].modo;
 
-		if(s_gil[ig].modo == GSON_MODO_ZIP || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+		if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 		{
 			s_gil[ig].bufw[1] = s_gil[ig].cont_itens;
 			if(flag_crc)
@@ -248,13 +232,13 @@ static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	}
 
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_encode_end_crc::: erro:%i, ig:%u, modo:%u, pos_bytes:%u, cont_itens:%u, crc:%u, chaves_null:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].chaves_null, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
 #else  // PC
 	printf("DEBUG gilson_encode_end_crc::: erro:%i, ig:%u, modo:%u, pos_bytes:%u, cont_itens:%u, crc:%u, chaves_null:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].chaves_null, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	// por mais que deu algum erro ou está em erro, vamos limpar a estrutura e sair fora...
 	s_gil[ig].ativo = 0;
@@ -291,12 +275,12 @@ int32_t gilson_encode_end_crc(uint32_t *crc)
 // colocar sempre o "(uint8_t *)" na frente da variavel de entrada 'multi_data' e passar como "&"
 static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, const uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	int32_t erro=erGSON_OK, len=0;  // check
+	int32_t erro=erGIL_OK, len=0;  // check
 	uint16_t i, vezes = 1, nbytes = 1, temp16, pos_bytes_check=0;
 	uint8_t len_string_max=0, tipo_mux=0, flag_teste=0;
-	char buff[LEN_MAX_STRING];  // supondo tamanho maximo de strings
+	char buff[GIL_LIMIT_STRING];  // supondo tamanho maximo de strings
 
-	if(s_gil[ig].erro != erGSON_OK)
+	if(s_gil[ig].erro != erGIL_OK)
 	{
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		goto deu_erro;
@@ -304,35 +288,35 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 
 	if(s_gil[ig].ativo==0)
 	{
-		erro = erGSON_3;
+		erro = erGIL_3;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].tipo_operacao!=e_OPER_ENCODE)
 	{
-		erro = erGSON_OPER;
+		erro = erGIL_OPER;
 		goto deu_erro;
 	}
 
 	if(tipo1!=255 && tipo2!=255)
 	{
-		if(tipo1>=GSON_MAX)
+		if(tipo1>=GIL_MAX)
 		{
-			erro = erGSON_4;
+			erro = erGIL_4;
 			goto deu_erro;
 		}
-		if(tipo2>=GSON_tMAX)
+		if(tipo2>=GIL_tMAX)
 		{
-			erro = erGSON_4b;
+			erro = erGIL_4b;
 			goto deu_erro;
 		}
 	}
 	else
 	{
-		if(s_gil[ig].modo == GSON_MODO_ZIP || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+		if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 		{
 			// esquema de nulo não aceita em modo ZIP!!
-			erro = erGSON_NULL;
+			erro = erGIL_NULL;
 			goto deu_erro;
 		}
 	}
@@ -341,19 +325,19 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 	if(chave > s_gil[ig].cont_itens)
 	{
 		// quer add uma chave maior do que a contagem crescente... não tem como
-		erro = erGSON_5;
+		erro = erGIL_5;
 		goto deu_erro;
 	}
 
-	if(s_gil[ig].cont_itens >= LIMIT_GSON_KEYS)
+	if(s_gil[ig].cont_itens >= GIL_LIMIT_KEYS)
 	{
-		erro = erGSON_LIMKEY;
+		erro = erGIL_LIMKEY;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].cont_itens>0 && chave <= s_gil[ig].chave_atual && s_gil[ig].tipo_dinamico==0)
 	{
-		erro = erGSON_SMKEYe;
+		erro = erGIL_SMKEYe;
 		goto deu_erro;
 	}
 
@@ -364,12 +348,12 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 	goto_meta_bala:
 
 
-	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		len = strlen(nome_chave);
-		if(len>LEN_MAX_CHAVE_NOME)
+		if(len>GIL_LIMIT_KEY_NAME)
 		{
-			erro = erGSON_7;
+			erro = erGIL_7;
 			goto deu_erro;
 		}
 		else
@@ -395,7 +379,7 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 	tipo_mux |= tipo2;
 	//printf("encode: 0baaabbbbb = a:tipo1(%u), b=tipo2()%u tipo_mux:%u\n", tipo1, tipo2, tipo_mux);
 
-	if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+	if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 	{
 		if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
 		{
@@ -406,18 +390,18 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 	}
 
 
-	if(tipo_mux != TIPO_GSON_NULL)
+	if(tipo_mux != TIPO_GIL_NULL)
 	{
-		if(tipo1 == GSON_LIST)
+		if(tipo1 == GIL_LIST)
 		{
 			if(cont_list_a == 0)
 			{
-				erro = erGSON_8;
+				erro = erGIL_8;
 				goto deu_erro;
 			}
 			vezes = cont_list_a;
 
-			if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+			if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 			{
 				if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
 				{
@@ -428,25 +412,25 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 				//printf("DEBUG gilson_encode_data: [%u,%u,%u,%u]\n", bufw[pos_bytes-4], bufw[pos_bytes-3], bufw[pos_bytes-2], bufw[pos_bytes-1]);
 			}
 
-			if(tipo2==GSON_tSTRING)
+			if(tipo2==GIL_tSTRING)
 			{
 				// aqui 'cont_list_b' é tratado como uint8
 
 				if(cont_list_b==0)
 				{
 					// precisamos do offset cru da lista de strings...
-					erro = erGSON_9;
+					erro = erGIL_9;
 					goto deu_erro;
 				}
-				else if(cont_list_b >= LEN_MAX_STRING)
+				else if(cont_list_b >= GIL_LIMIT_STRING)
 				{
-					erro = erGSON_9b;
+					erro = erGIL_9b;
 					goto deu_erro;
 				}
 				else
 				{
 					len_string_max = cont_list_b;
-					if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+					if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 					{
 						if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
 						{
@@ -456,27 +440,27 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 						pos_bytes_check += 1;
 					}
 				}
-				// cont_list_b > LEN_MAX_STRING_DATA ????
+				// cont_list_b > LIMIT_GIL_STRING_DATA ????
 			}
 		}
-		else if(tipo1 == GSON_MTX2D)
+		else if(tipo1 == GIL_MTX2D)
 		{
 			// aqui 'cont_list_b' é tratado como uint16
-			if(tipo2==GSON_tSTRING)
+			if(tipo2==GIL_tSTRING)
 			{
 				// não testado isso ainda, vai da ruim
-				erro = erGSON_10;
+				erro = erGIL_10;
 				goto deu_erro;
 			}
 
 			if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
 			{
-				erro = erGSON_11;
+				erro = erGIL_11;
 				goto deu_erro;
 			}
 			//vezes = cont_list_a * cont_list_b;  não utiliza...
 
-			if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+			if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 			{
 				if(flag_teste==0 && s_gil[ig].tipo_dinamico==0)
 				{
@@ -501,68 +485,68 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 				//printf("DEBUG gilson_encode_data: [%u,%u,%u,%u]\n", bufw[pos_bytes-4], bufw[pos_bytes-3], bufw[pos_bytes-2], bufw[pos_bytes-1]);
 			}
 		}
-		else  // GSON_SINGLE
+		else  // GIL_SINGLE
 		{
 			vezes = 1;
 
-			if(tipo2==GSON_tSTRING)
+			if(tipo2==GIL_tSTRING)
 			{
 				if(cont_list_a==0)
 				{
-					erro = erGSON_12;
+					erro = erGIL_12;
 					goto deu_erro;
 				}
-				else if(cont_list_a >= LEN_MAX_STRING)
+				else if(cont_list_a >= GIL_LIMIT_STRING)
 				{
-					erro = erGSON_12b;
+					erro = erGIL_12b;
 					goto deu_erro;
 				}
 				else
 				{
 					len_string_max = cont_list_a;
 				}
-				// cont_list_a > LEN_MAX_STRING_DATA ????
+				// cont_list_a > LIMIT_GIL_STRING_DATA ????
 			}
 		}
 
 
 		switch(tipo2)
 		{
-		case GSON_tBIT:
+		case GIL_tBIT:
 			// nada ainda...
 			break;
-		case GSON_tINT8:
-		case GSON_tUINT8:
+		case GIL_tINT8:
+		case GIL_tUINT8:
 			nbytes = 1;
 			break;
-		case GSON_tINT16:
-		case GSON_tUINT16:
+		case GIL_tINT16:
+		case GIL_tUINT16:
 			nbytes = 2;
 			break;
-		case GSON_tINT32:
-		case GSON_tUINT32:
+		case GIL_tINT32:
+		case GIL_tUINT32:
 			nbytes = 4;
 			break;
-		case GSON_tINT64:
-		case GSON_tUINT64:
+		case GIL_tINT64:
+		case GIL_tUINT64:
 			nbytes = 8;
 			break;
-		case GSON_tFLOAT32:
+		case GIL_tFLOAT32:
 			nbytes = 4;
 			break;
-		case GSON_tFLOAT64:
+		case GIL_tFLOAT64:
 			nbytes = 8;
 			break;
-		case GSON_tSTRING:
+		case GIL_tSTRING:
 			// só vai...
 			break;
 		default:
-			erro = erGSON_13;
+			erro = erGIL_13;
 			goto deu_erro;
 		}
 
 
-		if(tipo2 == GSON_tSTRING)
+		if(tipo2 == GIL_tSTRING)
 		{
 			for(i=0; i<vezes; i++)
 			{
@@ -600,7 +584,7 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 					}
 				}
 
-				if(len<=LEN_MAX_STRING)
+				if(len<=GIL_LIMIT_STRING)
 				{
 					if(flag_teste==0)
 					{
@@ -618,18 +602,18 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 				}
 				else
 				{
-					erro = erGSON_14;  // não é pra cair aqui pois o max de 'len_string_max' é 255 u8
+					erro = erGIL_14;  // não é pra cair aqui pois o max de 'len_string_max' é 255 u8
 					break;
 				}
 			}
 		}
-		else if(tipo2 == GSON_tBIT)
+		else if(tipo2 == GIL_tBIT)
 		{
 			// nada ainda...
 		}
 		else  // para o resto é só varer bytes
 		{
-			if(tipo1 == GSON_MTX2D)
+			if(tipo1 == GIL_MTX2D)
 			{
 				// vamos ao exemplo:
 				// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
@@ -673,19 +657,19 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 			s_gil[ig].chaves_null+=1;
 		}
 	}
-	// else (tipo_mux == TIPO_GSON_NULL)  so grava o 'tipo_mux' e cai fora...
+	// else (tipo_mux == TIPO_GIL_NULL)  so grava o 'tipo_mux' e cai fora...
 
 	deu_erro:
 
 	if(flag_teste)
 	{
-		if(erro!=erGSON_OK || (pos_bytes_check > s_gil[ig].size_max_pack))
+		if(erro!=erGIL_OK || (pos_bytes_check > s_gil[ig].size_max_pack))
 		{
 			// deu erro antes de saber ou vai explodir o buffer de entrada!!!
-			if(erro==erGSON_OK)
+			if(erro==erGIL_OK)
 			{
 				// específico que explodiu o buffer de entrada
-				erro = erGSON_6;
+				erro = erGIL_6;
 			}
 		}
 		else
@@ -697,7 +681,7 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 		}
 	}
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		if(s_gil[ig].tipo_dinamico==0)
 		{
@@ -712,16 +696,16 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 	}
 
 
-#if (USO_DEBUG_LIB==1)
-	if(erro!=erGSON_OK)
+#if (GIL_DEBUG_LIB==1)
+	if(erro!=erGIL_OK)
 	{
-#if (TIPO_DEVICE==0)
+#if (GIL_TYPE_DEVICE==0)
 		printf_DEBUG("DEBUG gilson_encode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, flag_teste:%u, tipo_dinamico:%u, pos_bytes_check:%u|%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, flag_teste, s_gil[ig].tipo_dinamico, pos_bytes_check, s_gil[ig].size_max_pack, s_gil[ig].chaves_null);
 #else  // PC
 		printf("DEBUG gilson_encode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, flag_teste:%u, tipo_dinamico:%u, pos_bytes_check:%u|%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, flag_teste, s_gil[ig].tipo_dinamico, pos_bytes_check, s_gil[ig].size_max_pack, s_gil[ig].chaves_null);
-#endif  // #if (TIPO_DEVICE==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
 	}
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	return erro;
 }
@@ -745,167 +729,167 @@ int32_t gilson_encode_dataKV(const uint8_t chave, const uint8_t tipo1, const uin
 //==========================================================================================================================================
 // funcoes auxiliares fortemente tipadas de encode
 
-//========================================= GSON_SINGLE
+//========================================= GIL_SINGLE
 int32_t gilson_encode_u8(const uint8_t chave, const uint8_t valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tUINT8, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tUINT8, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_s8(const uint8_t chave, const int8_t valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tINT8, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tINT8, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_u16(const uint8_t chave, const uint16_t valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tUINT16, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tUINT16, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_s16(const uint8_t chave, const int16_t valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tINT16, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tINT16, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_u32(const uint8_t chave, const uint32_t valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tUINT32, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tUINT32, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_s32(const uint8_t chave, const int32_t valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tINT32, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tINT32, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_u64(const uint8_t chave, const uint64_t valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tUINT64, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tUINT64, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_s64(const uint8_t chave, const int64_t valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tINT64, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tINT64, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_f32(const uint8_t chave, const float valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tFLOAT32, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tFLOAT32, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_f64(const uint8_t chave, const double valor)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tFLOAT64, CAST_GIL valor, 0, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tFLOAT64, CAST_GIL valor, 0, 0, 0);
 }
 
 int32_t gilson_encode_str(const uint8_t chave, const char *valor, const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_SINGLE, GSON_tSTRING, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_SINGLE, GIL_tSTRING, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
-//========================================= GSON_LIST
+//========================================= GIL_LIST
 int32_t gilson_encode_lu8(const uint8_t chave, const uint8_t valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tUINT8, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tUINT8, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_ls8(const uint8_t chave, const int8_t valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tINT8, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tINT8, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_lu16(const uint8_t chave, const uint16_t valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tUINT16, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tUINT16, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_ls16(const uint8_t chave, const int16_t valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tINT16, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tINT16, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_lu32(const uint8_t chave, const uint32_t valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tUINT32, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tUINT32, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_ls32(const uint8_t chave, const int32_t valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tINT32, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tINT32, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_lu64(const uint8_t chave, const uint64_t valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tUINT64, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tUINT64, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_ls64(const uint8_t chave, const int64_t valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tINT64, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tINT64, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_lf32(const uint8_t chave, const float valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tFLOAT32, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tFLOAT32, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_lf64(const uint8_t chave, const double valor[], const uint16_t cont_list_a)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tFLOAT64, (const uint8_t *)valor, cont_list_a, 0, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tFLOAT64, (const uint8_t *)valor, cont_list_a, 0, 0);
 }
 
 int32_t gilson_encode_lstr(const uint8_t chave, const char *valor, const uint16_t cont_list_a, const uint16_t cont_list_b)
 {
-	return gilson_encode_data_base(chave, "x", GSON_LIST, GSON_tSTRING, (const uint8_t *)valor, cont_list_a, cont_list_b, 0);
+	return gilson_encode_data_base(chave, "x", GIL_LIST, GIL_tSTRING, (const uint8_t *)valor, cont_list_a, cont_list_b, 0);
 }
 
-//========================================= GSON_MTX2D
+//========================================= GIL_MTX2D
 int32_t gilson_encode_mu8(const uint8_t chave, const uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tUINT8, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tUINT8, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_ms8(const uint8_t chave, const int8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tINT8, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tINT8, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_mu16(const uint8_t chave, const uint16_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tUINT16, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tUINT16, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_ms16(const uint8_t chave, const int16_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tINT16, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tINT16, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_mu32(const uint8_t chave, const uint32_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tUINT32, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tUINT32, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_ms32(const uint8_t chave, const int32_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tINT32, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tINT32, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_mu64(const uint8_t chave, const uint64_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tUINT64, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tUINT64, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_ms64(const uint8_t chave, const int64_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tINT64, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tINT64, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_mf32(const uint8_t chave, const float *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tFLOAT32, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tFLOAT32, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 int32_t gilson_encode_mf64(const uint8_t chave, const double *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	return gilson_encode_data_base(chave, "x", GSON_MTX2D, GSON_tFLOAT64, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(chave, "x", GIL_MTX2D, GIL_tFLOAT64, (const uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
 
@@ -918,11 +902,11 @@ int32_t gilson_encode_mf64(const uint8_t chave, const double *valor, const uint1
 //==========================================================================================================================================
 int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const uint8_t nitens)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 
 	// OBS: não foi testado ainda em modo KV
 
-	if(s_gil[ig].erro != erGSON_OK)
+	if(s_gil[ig].erro != erGIL_OK)
 	{
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		goto deu_erro;
@@ -930,25 +914,25 @@ int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const
 
 	if(s_gil[ig].ativo==0)
 	{
-		erro = erGSON_36;
+		erro = erGIL_36;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].tipo_dinamico == 1)
 	{
 		// ja está ativo esse modo... tem que teminar antes para iniciar um novo
-		erro = erGSON_37;
+		erro = erGIL_37;
 		goto deu_erro;
 	}
 
 	if(chave > s_gil[ig].cont_itens)
 	{
 		// quer add uma chave maior do que a contagem crescente... não tem como
-		erro = erGSON_38;
+		erro = erGIL_38;
 		goto deu_erro;
 	}
 
-	//if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	//if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	// aloca nome da chave!!! ainda não tem....
 
 	s_gil[ig].tipo_operacao = e_OPER_ENCODE;
@@ -960,12 +944,12 @@ int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const
 	s_gil[ig].nitens2 = 0;
 	s_gil[ig].cont_tipo_dinamico = 0;
 
-	if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+	if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 	{
 		// lembrando que no padrao normal agora viria o 'tipo_mux'
 		// 0baaabbbbb = a:tipo1, b=tipo2
 
-		s_gil[ig].bufw[s_gil[ig].pos_bytes] = TIPO_GSON_LDIN;
+		s_gil[ig].bufw[s_gil[ig].pos_bytes] = TIPO_GIL_LDIN;
 		s_gil[ig].pos_bytes += 1;
 
 		s_gil[ig].bufw[s_gil[ig].pos_bytes] = tam_list;
@@ -977,12 +961,12 @@ int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const
 	else
 	{
 		// muita gambi para fazer funcionar... chato pacassss, um dia quem sabe...
-		erro = erGSON_63;
+		erro = erGIL_63;
 	}
 
 	deu_erro:
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		s_gil[ig].cont_itens += 1;
 	}
@@ -992,13 +976,13 @@ int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const
 	}
 
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_encode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, tam_list, nitens);
 #else  // PC
 	printf("DEBUG gilson_encode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, tam_list, nitens);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	return erro;
 }
@@ -1006,9 +990,9 @@ int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const
 
 static int32_t valid_gilson_encode_dl(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 
-	if(s_gil[ig].erro != erGSON_OK)
+	if(s_gil[ig].erro != erGIL_OK)
 	{
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		goto deu_erro;
@@ -1016,85 +1000,85 @@ static int32_t valid_gilson_encode_dl(const uint8_t item, const uint8_t tipo1, c
 
 	if(s_gil[ig].ativo==0)
 	{
-		erro = erGSON_39;
+		erro = erGIL_39;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].tipo_dinamico == 0)
 	{
-		erro = erGSON_40;
+		erro = erGIL_40;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].tipo_operacao!=e_OPER_ENCODE)
 	{
-		erro = erGSON_OPER;
+		erro = erGIL_OPER;
 		goto deu_erro;
 	}
 
-	if(tipo1>=GSON_MAX)
+	if(tipo1>=GIL_MAX)
 	{
-		erro = erGSON_41;
+		erro = erGIL_41;
 		goto deu_erro;
 	}
 
-	if(tipo2>=GSON_tMAX)
+	if(tipo2>=GIL_tMAX)
 	{
-		erro = erGSON_41b;
+		erro = erGIL_41b;
 		goto deu_erro;
 	}
 
 	if(item > s_gil[ig].nitens)
 	{
 		// quer add uma item maior do que a contagem crescente... não tem como
-		erro = erGSON_42;
+		erro = erGIL_42;
 		goto deu_erro;
 	}
 
-	if(tipo1 == GSON_LIST)
+	if(tipo1 == GIL_LIST)
 	{
 		if(cont_list_a == 0)
 		{
-			erro = erGSON_43;
+			erro = erGIL_43;
 			goto deu_erro;
 		}
 
 
-		if(tipo2==GSON_tSTRING)
+		if(tipo2==GIL_tSTRING)
 		{
 			// aqui 'cont_list_b' é tratado como uint8
 			if(cont_list_b==0)
 			{
 				// precisamos do offset cru da lista de strings...
-				erro = erGSON_44;
+				erro = erGIL_44;
 				goto deu_erro;
 			}
 		}
 	}
-	else if(tipo1 == GSON_MTX2D)
+	else if(tipo1 == GIL_MTX2D)
 	{
 		// aqui 'cont_list_b' é tratado como uint16
-		if(tipo2==GSON_tSTRING)
+		if(tipo2==GIL_tSTRING)
 		{
 			// não testado isso ainda, vai da ruim
-			erro = erGSON_45;
+			erro = erGIL_45;
 			goto deu_erro;
 		}
 
 		if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
 		{
-			erro = erGSON_46;
+			erro = erGIL_46;
 			goto deu_erro;
 		}
 		//vezes = cont_list_a * cont_list_b;  não utiliza...
 	}
-	else  // GSON_SINGLE
+	else  // GIL_SINGLE
 	{
-		if(tipo2==GSON_tSTRING)
+		if(tipo2==GIL_tSTRING)
 		{
 			if(cont_list_a==0)
 			{
-				erro = erGSON_47;
+				erro = erGIL_47;
 				goto deu_erro;
 			}
 		}
@@ -1108,13 +1092,13 @@ static int32_t valid_gilson_encode_dl(const uint8_t item, const uint8_t tipo1, c
 
 int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 	uint16_t vezes = 1;
 	uint8_t tipo_mux=0, len_string_max=0;
 
 
 	erro = valid_gilson_encode_dl(item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-	if(erro != erGSON_OK)
+	if(erro != erGIL_OK)
 	{
 		goto deu_erro;
 	}
@@ -1124,28 +1108,28 @@ int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint
 	tipo_mux |= tipo2;
 	//printf("encode: 0baaabbbbb = a:tipo1(%u), b=tipo2()%u tipo_mux:%u\n", tipo1, tipo2, tipo_mux);
 
-	if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+	if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 	{
 		s_gil[ig].bufw[s_gil[ig].pos_bytes] = tipo_mux;
 		s_gil[ig].pos_bytes += 1;
 	}
 
-	if(tipo1 == GSON_LIST)
+	if(tipo1 == GIL_LIST)
 	{
 		vezes = cont_list_a;
 
-		if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+		if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 		{
 			memcpy(&s_gil[ig].bufw[s_gil[ig].pos_bytes], &vezes, 2);
 			s_gil[ig].pos_bytes += 2;
 			//printf("DEBUG gilson_encode_data: [%u,%u,%u,%u]\n", bufw[pos_bytes-4], bufw[pos_bytes-3], bufw[pos_bytes-2], bufw[pos_bytes-1]);
 		}
 
-		if(tipo2==GSON_tSTRING)
+		if(tipo2==GIL_tSTRING)
 		{
 			// aqui 'cont_list_b' é tratado como uint8
 			len_string_max = cont_list_b;
-			if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+			if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 			{
 				s_gil[ig].bufw[s_gil[ig].pos_bytes] = len_string_max;
 				s_gil[ig].pos_bytes += 1;
@@ -1153,11 +1137,11 @@ int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint
 
 		}
 	}
-	else if(tipo1 == GSON_MTX2D)
+	else if(tipo1 == GIL_MTX2D)
 	{
 		//vezes = cont_list_a * cont_list_b;  não utiliza...
 
-		if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+		if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 		{
 			s_gil[ig].bufw[s_gil[ig].pos_bytes] = (uint8_t)cont_list_a;
 			s_gil[ig].pos_bytes += 1;
@@ -1170,11 +1154,11 @@ int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint
 			//printf("DEBUG gilson_encode_data: [%u,%u,%u,%u]\n", bufw[pos_bytes-4], bufw[pos_bytes-3], bufw[pos_bytes-2], bufw[pos_bytes-1]);
 		}
 	}
-	else  // GSON_SINGLE
+	else  // GIL_SINGLE
 	{
 		vezes = 1;
 
-		if(tipo2==GSON_tSTRING)
+		if(tipo2==GIL_tSTRING)
 		{
 			len_string_max = cont_list_a;
 		}
@@ -1182,17 +1166,17 @@ int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint
 
 	deu_erro:
 
-	if(erro!=erGSON_OK)
+	if(erro!=erGIL_OK)
 	{
 		s_gil[ig].erro = erro;
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 		printf_DEBUG("DEBUG gilson_encode_dl_add::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 #else  // PC
 		printf("DEBUG gilson_encode_dl_add::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	}
 
@@ -1202,10 +1186,10 @@ int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint
 // const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step
 int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 
 	erro = valid_gilson_encode_dl(item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-	if(erro != erGSON_OK)
+	if(erro != erGIL_OK)
 	{
 		goto deu_erro;
 	}
@@ -1215,7 +1199,7 @@ int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uin
 
 	deu_erro:
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		s_gil[ig].cont_tipo_dinamico += 1;
 	}
@@ -1223,13 +1207,13 @@ int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uin
 	{
 		s_gil[ig].erro = erro;
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 		printf_DEBUG("DEBUG gilson_encode_dl_data::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 #else  // PC
 		printf("DEBUG gilson_encode_dl_data::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	}
 
@@ -1238,32 +1222,32 @@ int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uin
 
 int32_t gilson_encode_dl_end(void)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 
 
 	// se não bateu o numero de 'tam_list' e/ou 'nitens' da pra gerar um erro...
 	if(s_gil[ig].tipo_dinamico == 0)
 	{
-		erro = erGSON_48;
+		erro = erGIL_48;
 	}
 	else if(s_gil[ig].tipo_operacao != e_OPER_ENCODE)
 	{
-		erro = erGSON_OPER;
+		erro = erGIL_OPER;
 	}
 	else if(s_gil[ig].cont_tipo_dinamico != s_gil[ig].tam_list*s_gil[ig].nitens)
 	{
 		// total de itens geral não bate a conta com o programado
-		erro = erGSON_49;
+		erro = erGIL_49;
 	}
 
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_encode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
 #else  // PC
 	printf("DEBUG gilson_encode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	s_gil[ig].tipo_dinamico = 0;  // finalizando o tratar um tipo dinamico
 
@@ -1284,7 +1268,7 @@ int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t ti
 
 	va_start(argptr, tipo2);
 
-	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
 		//erro = valida_nome_chave(nome_chave);
@@ -1292,22 +1276,22 @@ int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t ti
 
 	valor = va_arg(argptr, uint8_t *);
 
-	if(tipo1 == GSON_SINGLE)
+	if(tipo1 == GIL_SINGLE)
 	{
-		if(tipo2 == GSON_tSTRING)
+		if(tipo2 == GIL_tSTRING)
 		{
 			cont_list_a = (uint16_t)va_arg(argptr, int);
 		}
 	}
-	else if(tipo1 == GSON_LIST)
+	else if(tipo1 == GIL_LIST)
 	{
 		cont_list_a = (uint16_t)va_arg(argptr, int);
-		if(tipo2 == GSON_tSTRING)
+		if(tipo2 == GIL_tSTRING)
 		{
 			cont_list_b = (uint16_t)va_arg(argptr, int);
 		}
 	}
-	else if(tipo1 == GSON_MTX2D)
+	else if(tipo1 == GIL_MTX2D)
 	{
 		cont_list_a = (uint16_t)va_arg(argptr, int);
 		cont_list_b = (uint16_t)va_arg(argptr, int);
@@ -1352,7 +1336,7 @@ int32_t gilson_encode_mapfix(const uint16_t *map, ...)
 
 	va_start(argptr, map);
 
-	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
 		//erro = valida_nome_chave(nome_chave);
@@ -1360,22 +1344,22 @@ int32_t gilson_encode_mapfix(const uint16_t *map, ...)
 
 	valor = va_arg(argptr, uint8_t *);
 
-	if(map[1] == GSON_SINGLE)
+	if(map[1] == GIL_SINGLE)
 	{
-		if(map[2] == GSON_tSTRING)
+		if(map[2] == GIL_tSTRING)
 		{
 			cont_list_a = map[3];
 		}
 	}
-	else if(map[1] == GSON_LIST)
+	else if(map[1] == GIL_LIST)
 	{
 		cont_list_a = map[3];
-		if(map[2] == GSON_tSTRING)
+		if(map[2] == GIL_tSTRING)
 		{
 			cont_list_b = map[4];
 		}
 	}
-	else if(map[1] == GSON_MTX2D)
+	else if(map[1] == GIL_MTX2D)
 	{
 		cont_list_a = map[3];
 		cont_list_b = map[4];
@@ -1416,7 +1400,7 @@ int32_t gilson_encode_mapdin(const uint16_t *map, ...)
 
 	va_start(argptr, map);
 
-	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
 		//erro = valida_nome_chave(nome_chave);
@@ -1424,22 +1408,22 @@ int32_t gilson_encode_mapdin(const uint16_t *map, ...)
 
 	valor = va_arg(argptr, uint8_t *);
 
-	if(map[1] == GSON_SINGLE)
+	if(map[1] == GIL_SINGLE)
 	{
-		if(map[2] == GSON_tSTRING)
+		if(map[2] == GIL_tSTRING)
 		{
 			cont_list_a = (uint16_t)va_arg(argptr, int);
 		}
 	}
-	else if(map[1] == GSON_LIST)
+	else if(map[1] == GIL_LIST)
 	{
 		cont_list_a = (uint16_t)va_arg(argptr, int);
-		if(map[2] == GSON_tSTRING)
+		if(map[2] == GIL_tSTRING)
 		{
 			cont_list_b = (uint16_t)va_arg(argptr, int);
 		}
 	}
-	else if(map[1] == GSON_MTX2D)
+	else if(map[1] == GIL_MTX2D)
 	{
 		cont_list_a = (uint16_t)va_arg(argptr, int);
 		cont_list_b = (uint16_t)va_arg(argptr, int);
@@ -1471,18 +1455,18 @@ int32_t gilson_encode_data_null(const uint8_t chave, ...)
     va_list argptr;
 
     /*
-	if(s_gil[ig].modo == GSON_MODO_ZIP || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		// esquema de nulo não aceita em modo ZIP!!
 		if(s_gil[ig].erro == 0)
-		return erGSON_NULL;
+		return erGIL_NULL;
 	}
 	*/
 
     va_start(argptr, chave);
 
-    //if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
-	if(s_gil[ig].modo == GSON_MODO_KV)
+    //if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV)
     {
         nome_chave = va_arg(argptr, char *);
         //erro = valida_nome_chave(nome_chave);
@@ -1507,16 +1491,16 @@ int32_t gilson_encode_data_null(const uint8_t chave, ...)
 
 int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 {
-	SIZE_TYPE_RAM end_ram=0;
+	GIL_SIZE_RAM end_ram=0;
 	uint32_t crc1=0, crc2=0;
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 
 	// queremos decodificar um pacote...
 
 	if(s_gil[ig].ativo==1)
 	{
-		erro = erGSON_15;
-		end_ram = (SIZE_TYPE_RAM)pack;  // endereço na ram????
+		erro = erGIL_15;
+		end_ram = (GIL_SIZE_RAM)pack;  // endereço na ram????
 
 		// atual 'ig' está ativo ja... não tem o que fazer... vamos consultar o segundo
 		if(ig==0)
@@ -1524,46 +1508,46 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 			// vamos ver o segundo...
 			if(s_gil[ig+1].ativo==1)
 			{
-				erro = erGSON_16;
+				erro = erGIL_16;
 				// não tem o que fazer.... aborta a missao!!!!
 			}
 			else if(end_ram==s_gil[ig].end_ram)
 			{
 				// quer utililzar o mesmo buffer geral????? não tem fazer isso....
-				erro = erGSON_17;
+				erro = erGIL_17;
 				// não tem o que fazer.... aborta a missao!!!!
 			}
 			else
 			{
-				erro = erGSON_OK;
+				erro = erGIL_OK;
 				ig=1;  // vai para o segundo e esse passar ser o atual global da lib
 			}
 		}
 
-		if(erro!=erGSON_OK) goto deu_erro;
+		if(erro!=erGIL_OK) goto deu_erro;
 	}
 
 	memset(&s_gil[ig], 0x00, sizeof(s_gil[ig]));
 
-	if(pack[0] == GSON_MODO_JSON)  // modo
+	if(pack[0] == GIL_MODO_JSON)  // modo
 	{
-		erro = erGSON_dJSON;
+		erro = erGIL_dJSON;
 		goto deu_erro;
 	}
 
 	s_gil[ig].tipo_operacao = e_OPER_DECODE;
-	s_gil[ig].end_ram = (SIZE_TYPE_RAM)pack;  // endereço na ram????
+	s_gil[ig].end_ram = (GIL_SIZE_RAM)pack;  // endereço na ram????
 	s_gil[ig].bufr = pack;
 	s_gil[ig].modo = s_gil[ig].bufr[0];
 	s_gil[ig].pos_bytes = 0;
 	s_gil[ig].cont_itens = 0;
 
-	if(s_gil[ig].modo >= GSON_MODO_MAX)
+	if(s_gil[ig].modo >= GIL_MODO_MAX)
 	{
-		erro = erGSON_18;
+		erro = erGIL_18;
 		goto deu_erro;
 	}
-	else if(s_gil[ig].modo == GSON_MODO_ZIP || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	else if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		s_gil[ig].cont_itens2 = s_gil[ig].bufr[1];
 
@@ -1579,7 +1563,7 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 
 		if(crc1 != crc2)
 		{
-			erro = erGSON_19;
+			erro = erGIL_19;
 			goto deu_erro;
 			//return -3;
 		}
@@ -1591,7 +1575,7 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 
 	deu_erro:
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		s_gil[ig].ativo = 1;  // ativa decodificação
 		*modo = s_gil[ig].modo;
@@ -1604,13 +1588,13 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 	}
 
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_decode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u], crc:%u==%u, pos_bytes2:%u, cont_itens2:%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
 #else  // PC
 	printf("DEBUG gilson_decode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u], crc:%u==%u, pos_bytes2:%u, cont_itens2:%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 
 	return erro;
@@ -1619,7 +1603,7 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 
 int32_t gilson_decode_valid(const uint8_t *pack)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 	uint8_t modo;
 
 	erro = gilson_decode_init(pack, &modo);
@@ -1631,15 +1615,15 @@ int32_t gilson_decode_valid(const uint8_t *pack)
 
 static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 
-	if(s_gil[ig].erro != erGSON_OK)
+	if(s_gil[ig].erro != erGIL_OK)
 	{
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		goto deu_erro;
 	}
 
-	if(s_gil[ig].modo == GSON_MODO_ZIP || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		if(flag_crc)
 		{
@@ -1656,7 +1640,7 @@ static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 		if(s_gil[ig].cont_itens == s_gil[ig].cont_itens2 && s_gil[ig].pos_bytes != s_gil[ig].pos_bytes2)
 		{
 			// chegou até o fim 'cont_itens2' mas o 'pos_bytes' não bateu com o 'pos_bytes2', dai deu ruim
-			erro = erGSON_20;
+			erro = erGIL_20;
 		}
 		else
 		{
@@ -1676,17 +1660,17 @@ static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	s_gil[ig].ativo = 0;
 	s_gil[ig].tipo_operacao = e_OPER_NULL;
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out, s_gil[ig].chaves_null);
 #else  // PC
 	printf("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out, s_gil[ig].chaves_null);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		if(ig==1)
 		{
@@ -1702,7 +1686,7 @@ static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	{
 		// estamos para encerrar o pacote mas ficou com erro que pode ser de agora ou herdado...
 		// mas como vamos finalizar e não queremos travar a estrutura GILSON vamos zerar o erro da estrutura
-		s_gil[ig].erro = erGSON_OK;  // erro
+		s_gil[ig].erro = erGIL_OK;  // erro
 
 		if(ig==1)
 		{
@@ -1729,13 +1713,13 @@ int32_t gilson_decode_end_crc(uint32_t *crc)
 // colocar sempre o "(uint8_t *)" na frente da variavel de entrada 'multi_data' e passar como "&"
 static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step, const uint8_t test_valor)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 	uint16_t i, vezes = 1, nbytes=1, temp16, len=0;
 
 	uint16_t cont_list_aX=0, cont_list_bX=0, cont_list_stepX=0, pos_bytes_bk=0;
 	uint8_t tipo_muxX=0, tipo1X=0, tipo2X=0, flag_chave_fora=0;
 
-	if(s_gil[ig].erro != erGSON_OK)
+	if(s_gil[ig].erro != erGIL_OK)
 	{
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		goto deu_erro;
@@ -1743,39 +1727,39 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 
 	if(s_gil[ig].ativo==0)
 	{
-		erro = erGSON_21;
+		erro = erGIL_21;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].tipo_operacao!=e_OPER_DECODE)
 	{
-		erro = erGSON_OPER;
+		erro = erGIL_OPER;
 		goto deu_erro;
 	}
 
-	if(tipo1>=GSON_MAX)
+	if(tipo1>=GIL_MAX)
 	{
-		erro = erGSON_22;
+		erro = erGIL_22;
 		goto deu_erro;
 	}
 
-	if(tipo2>=GSON_tMAX)
+	if(tipo2>=GIL_tMAX)
 	{
-		erro = erGSON_22b;
+		erro = erGIL_22b;
 		goto deu_erro;
 	}
 
 	if(chave >= s_gil[ig].cont_itens2)  // 's_gil[ig].tipo_dinamico==0' ????  && s_gil[ig].tipo_dinamico==0
 	{
 		// quer ler uma chave maior do que a total programado
-		if(FLAG_NEW_KEY==0)
+		if(GIL_FLAG_NEW_KEY==0)
 		{
-			erro = erGSON_23b;
+			erro = erGIL_23b;
 			goto deu_erro;
 		}
 		else
 		{
-			//return erGSON_OK;
+			//return erGIL_OK;
 			flag_chave_fora = 1;
 			goto chave_nova;
 		}
@@ -1784,19 +1768,19 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 	if(chave > s_gil[ig].cont_itens)
 	{
 		// quer ler uma chave maior do que a contagem crescente...
-		// vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GSON_MODO_FULL'!!!
+		// vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GIL_MODO_FULL'!!!
 		// OBS: 's_gil[ig].cont_itens' caminha junto conforme o decode crescente
-		erro = erGSON_23;
+		erro = erGIL_23;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].cont_itens>0 && chave <= s_gil[ig].chave_atual && s_gil[ig].tipo_dinamico==0)
 	{
-		erro = erGSON_SMKEYd;
+		erro = erGIL_SMKEYd;
 		goto deu_erro;
 	}
 
-	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		// nome da chave
 		len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
@@ -1808,7 +1792,7 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 		// len vai ser menor que 'LEN_MAX_CHAVE_NOME' caracteres...
 	}
 
-	if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+	if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 	{
 		// 0baaabbbbb = a:tipo1, b=tipo2
 		//bufr[pos_bytes] = tipo_mux;
@@ -1823,18 +1807,18 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 		//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu0 chave:%u, tipomuxX:%u, tipo1X:%u, tipo2X:%u, pos_bytes:%u\n", chave, tipomuxX, tipo1X, tipo2X, s_gil[ig].pos_bytes);
 	}
 
-	if(tipo1 == GSON_LIST)
+	if(tipo1 == GIL_LIST)
 	{
 		if(cont_list_a == 0)
 		{
-			erro = erGSON_24;
+			erro = erGIL_24;
 			goto deu_erro;
 		}
 		vezes = cont_list_a;
 
-		if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+		if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 		{
-			if(tipo_muxX!=TIPO_GSON_NULL)
+			if(tipo_muxX!=TIPO_GIL_NULL)
 			{
 				//memcpy(&bufr[pos_bytes], &vezes, 2);
 				memcpy(&cont_list_aX, &s_gil[ig].bufr[s_gil[ig].pos_bytes], 2);
@@ -1842,19 +1826,19 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 			}
 		}
 
-		if(tipo2==GSON_tSTRING)
+		if(tipo2==GIL_tSTRING)
 		{
 			if(cont_list_b==0)
 			{
 				// precisamos do offset cru da lista de strings...
-				erro = erGSON_25;
+				erro = erGIL_25;
 				goto deu_erro;
 			}
 			else
 			{
-				if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+				if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 				{
-					if(tipo_muxX!=TIPO_GSON_NULL)
+					if(tipo_muxX!=TIPO_GIL_NULL)
 					{
 						//bufr[pos_bytes] = (uint8_t)cont_list_b;  // len_string_max
 						cont_list_bX = s_gil[ig].bufr[s_gil[ig].pos_bytes];
@@ -1864,18 +1848,18 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 			}
 		}
 	}
-	else if(tipo1 == GSON_MTX2D)
+	else if(tipo1 == GIL_MTX2D)
 	{
 		if(cont_list_a == 0 || cont_list_b == 0  || cont_list_step == 0)
 		{
-			erro = erGSON_26;
+			erro = erGIL_26;
 			goto deu_erro;
 		}
 		//vezes = cont_list_a * cont_list_b;
 
-		if(s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV)
+		if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 		{
-			if(tipo_muxX!=TIPO_GSON_NULL)
+			if(tipo_muxX!=TIPO_GIL_NULL)
 			{
 				//bufr[pos_bytes] = (uint8_t)cont_list_a;
 				cont_list_aX = s_gil[ig].bufr[s_gil[ig].pos_bytes];
@@ -1889,11 +1873,11 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 			}
 		}
 	}
-	else  // GSON_SINGLE
+	else  // GIL_SINGLE
 	{
 		vezes = 1;
 		/*
-		if(tipo2==GSON_tSTRING)
+		if(tipo2==GIL_tSTRING)
 		{
 			if(cont_list_a==0)  // por mais que não vá utilizar... para 1 string somente
 			{
@@ -1910,22 +1894,22 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 	chave_nova:
 
 	// faz validacao do que tinha para com os parametros de entrada
-	if((s_gil[ig].modo == GSON_MODO_FULL || s_gil[ig].modo == GSON_MODO_KV) && test_valor==1)
+	if((s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV) && test_valor==1)
 	{
 		//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu1 chave:%u, modo:%u, tipomuxX:%u, tipo1:%u|%u, tipo2:%u|%u, pos_bytes:%u, cont_list_a:%u|%u, cont_list_b:%u|%u, cont_list_step:%u|%u, vezes:%u\n", chave, s_gil[ig].modo, tipo_muxX, tipo1, tipo1X, tipo2, tipo2X, pos_bytes_bk, cont_list_a, cont_list_aX, cont_list_b, cont_list_b, cont_list_step, cont_list_step, vezes);
 
-		if(tipo_muxX!=TIPO_GSON_NULL)
+		if(tipo_muxX!=TIPO_GIL_NULL)
 		{
-			if(tipo1 != tipo1X || tipo2 != tipo2X || (tipo1!=GSON_SINGLE && cont_list_a < cont_list_aX) || cont_list_b < cont_list_bX || cont_list_step < cont_list_stepX)
+			if(tipo1 != tipo1X || tipo2 != tipo2X || (tipo1!=GIL_SINGLE && cont_list_a < cont_list_aX) || cont_list_b < cont_list_bX || cont_list_step < cont_list_stepX)
 			{
 				//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu1 chave:%u, modo:%u, tipomuxX:%u, tipo1:%u|%u, tipo2:%u|%u, pos_bytes:%u, cont_list_a:%u|%u, cont_list_b:%u|%u, cont_list_step:%u|%u, vezes:%u\n", chave, s_gil[ig].modo, tipomuxX, tipo1, tipo1X, tipo2, tipo2X, pos_bytes_bk, cont_list_a, cont_list_aX, cont_list_b, cont_list_b, cont_list_step, cont_list_step, vezes);
-				erro = erGSON_DIFIN;
+				erro = erGIL_DIFIN;
 				goto deu_erro;
 			}
 		}
 
 		// na realidade quem manda é o que está no pacote e não o externo, logo é os "X"
-		if(tipo1!=GSON_SINGLE && cont_list_a!=cont_list_aX)
+		if(tipo1!=GIL_SINGLE && cont_list_a!=cont_list_aX)
 		{
 			vezes = cont_list_aX;
 		}
@@ -1939,46 +1923,46 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 		cont_list_stepX = cont_list_step;
 	}
 
-	if(tipo_muxX!=TIPO_GSON_NULL)
+	if(tipo_muxX!=TIPO_GIL_NULL)
 	{
 		// PASSO 1: encontra tamanho de '*valor'
 		switch(tipo2)
 		{
-		case GSON_tBIT:
+		case GIL_tBIT:
 			// nada ainda...
 			break;
-		case GSON_tINT8:
-		case GSON_tUINT8:
+		case GIL_tINT8:
+		case GIL_tUINT8:
 			nbytes=1;
 			break;
-		case GSON_tINT16:
-		case GSON_tUINT16:
+		case GIL_tINT16:
+		case GIL_tUINT16:
 			nbytes=2;
 			break;
-		case GSON_tINT32:
-		case GSON_tUINT32:
+		case GIL_tINT32:
+		case GIL_tUINT32:
 			nbytes=4;
 			break;
-		case GSON_tINT64:
-		case GSON_tUINT64:
+		case GIL_tINT64:
+		case GIL_tUINT64:
 			nbytes=8;
 			break;
-		case GSON_tFLOAT32:
+		case GIL_tFLOAT32:
 			nbytes=4;
 			break;
-		case GSON_tFLOAT64:
+		case GIL_tFLOAT64:
 			nbytes=8;
 			break;
-		case GSON_tSTRING:
+		case GIL_tSTRING:
 			// só vai...
 			break;
 		default:
-			erro = erGSON_27;
+			erro = erGIL_27;
 			goto deu_erro;
 		}
 
 		// PASSO 2: aloca os respectivos bytes em '*valor'
-		if(tipo2 == GSON_tSTRING)
+		if(tipo2 == GIL_tSTRING)
 		{
 			for(i=0; i<vezes; i++)
 			{
@@ -2001,14 +1985,14 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 
 			}
 		}
-		else if(tipo2 == GSON_tBIT)
+		else if(tipo2 == GIL_tBIT)
 		{
 			// nada ainda...
 		}
 		else
 		{
 			// para o resto é só varer bytes
-			if(tipo1 == GSON_MTX2D)
+			if(tipo1 == GIL_MTX2D)
 			{
 				// vamos ao exemplo:
 				// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
@@ -2059,7 +2043,7 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 
 	deu_erro:
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		if(flag_chave_fora==0)
 		{
@@ -2072,13 +2056,13 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 	{
 		s_gil[ig].erro = erro;
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 		printf_DEBUG("DEBUG gilson_decode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 #else  // PC
 		printf("DEBUG gilson_decode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	}
 
@@ -2088,7 +2072,7 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 
 int32_t gilson_decode_data(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
 
 	//printf("gilson_decode_data::: chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 
@@ -2104,227 +2088,227 @@ int32_t gilson_decode_dataKV(const uint8_t chave, char *nome_chave, const uint8_
 
 // funcoes auxiliares fortemente tipadas de decode
 
-//========================================= GSON_SINGLE
+//========================================= GIL_SINGLE
 int32_t gilson_decode_u8(const uint8_t chave, uint8_t *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tUINT8, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tUINT8, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_s8(const uint8_t chave, int8_t *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tINT8, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tINT8, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_u16(const uint8_t chave, uint16_t *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tUINT16, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tUINT16, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_s16(const uint8_t chave, int16_t *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tINT16, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tINT16, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_u32(const uint8_t chave, uint32_t *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tUINT32, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tUINT32, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_s32(const uint8_t chave, int32_t *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tINT32, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tINT32, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_u64(const uint8_t chave, uint64_t *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tUINT64, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tUINT64, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_s64(const uint8_t chave, int64_t *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tINT64, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tINT64, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_f32(const uint8_t chave, float *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tFLOAT32, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tFLOAT32, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_f64(const uint8_t chave, double *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tFLOAT64, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tFLOAT64, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_str(const uint8_t chave, char *valor)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_SINGLE, GSON_tSTRING, (uint8_t *)valor, 0, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tSTRING, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 
-//========================================= GSON_LIST
+//========================================= GIL_LIST
 int32_t gilson_decode_lu8(const uint8_t chave, uint8_t valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tUINT8, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tUINT8, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_ls8(const uint8_t chave, int8_t valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tINT8, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tINT8, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lu16(const uint8_t chave, uint16_t valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tUINT16, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tUINT16, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_ls16(const uint8_t chave, int16_t valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tINT16, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tINT16, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lu32(const uint8_t chave, uint32_t valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tUINT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tUINT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_ls32(const uint8_t chave, int32_t valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tINT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tINT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lu64(const uint8_t chave, uint64_t valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tUINT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tUINT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_ls64(const uint8_t chave, int64_t valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tINT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tINT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lf32(const uint8_t chave, float valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tFLOAT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tFLOAT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lf64(const uint8_t chave, double valor[], const uint16_t cont_list_a)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tFLOAT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tFLOAT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lstr(const uint8_t chave, char *valor, const uint16_t cont_list_a, const uint16_t cont_list_b)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_LIST, GSON_tSTRING, (uint8_t *)valor, cont_list_a, cont_list_b, 0, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tSTRING, (uint8_t *)valor, cont_list_a, cont_list_b, 0, 0);
 }
 
 
 
-//========================================= GSON_MTX2D
+//========================================= GIL_MTX2D
 int32_t gilson_decode_mu8(const uint8_t chave, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tUINT8, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tUINT8, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_ms8(const uint8_t chave, int8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tINT8, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tINT8, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mu16(const uint8_t chave, uint16_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tUINT16, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tUINT16, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_ms16(const uint8_t chave, int16_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tINT16, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tINT16, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mu32(const uint8_t chave, uint32_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tUINT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tUINT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_ms32(const uint8_t chave, int32_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tINT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tINT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mu64(const uint8_t chave, uint64_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tUINT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tUINT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_ms64(const uint8_t chave, int64_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tINT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tINT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mf32(const uint8_t chave, float *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tFLOAT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tFLOAT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mf64(const uint8_t chave, double *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
-	return gilson_decode_data_base(chave, temp, GSON_MTX2D, GSON_tFLOAT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tFLOAT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
@@ -2333,14 +2317,14 @@ int32_t gilson_decode_mf64(const uint8_t chave, double *valor, const uint16_t co
 
 
 
-// só funciona para modo 'GSON_MODO_FULL'!!!!
+// só funciona para modo 'GIL_MODO_FULL'!!!!
 static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chave, uint8_t *valor)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 	uint16_t i, vezes = 1, cont_list_a=0, cont_list_b=0, cont_list_step=0, nbytes=1, temp16, pos_bytes, len, pos_bytes_bk=0;
 	uint8_t tipo_mux=0, tipo1=255, tipo2=255, bypass=0;
 
-	if(s_gil[ig].erro != erGSON_OK)
+	if(s_gil[ig].erro != erGIL_OK)
 	{
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		goto deu_erro;
@@ -2348,20 +2332,20 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 
 	if(s_gil[ig].ativo==0)
 	{
-		erro = erGSON_28;
+		erro = erGIL_28;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].tipo_operacao!=e_OPER_DECODE)
 	{
-		erro = erGSON_OPER;
+		erro = erGIL_OPER;
 		goto deu_erro;
 	}
 
-	// somente funciona no modo 'GSON_MODO_FULL' e 'GSON_MODO_KV'!!!!
-	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
+	// somente funciona no modo 'GIL_MODO_FULL' e 'GIL_MODO_KV'!!!!
+	if(s_gil[ig].modo != GIL_MODO_FULL && s_gil[ig].modo != GIL_MODO_KV)
 	{
-		erro = erGSON_29;
+		erro = erGIL_29;
 		goto deu_erro;
 	}
 
@@ -2369,26 +2353,26 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 	{
 		// quer ler uma chave maior do que a contagem total que é decodificada em decode_init e aloca em 'cont_itens2'
 		// quer ler uma chave maior do que a total programado
-		if(FLAG_NEW_KEY==0)
+		if(GIL_FLAG_NEW_KEY==0)
 		{
-			erro = erGSON_30;
+			erro = erGIL_30;
 			goto deu_erro;
 		}
 		else
 		{
-			return erGSON_OK;
+			return erGIL_OK;
 			//nao temos info sobre o tipo no FULL... salvo via mapa....
 		}
 	}
 
 
-#if (USO_DEBUG_LIB==1 && PRINT_DEBUG==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1 && GIL_PRINT_DEBUG==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_decode_data_full_base init::: ig:%u, chave:%u, nulos:%u, cont_itens:%u, cont_itens2:%u, pos_bytes:%u\n", ig, chave, s_gil[ig].chaves_null, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].pos_bytes);
 #else  // PC
 	printf("DEBUG gilson_decode_data_full_base init::: ig:%u, chave:%u, nulos:%u, cont_itens:%u, cont_itens2:%u, pos_bytes:%u\n", ig, chave, s_gil[ig].chaves_null, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].pos_bytes);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 
 	while(1)
@@ -2417,7 +2401,7 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 
 		if(s_gil[ig].tipo_dinamico == 0)
 		{
-			if(s_gil[ig].modo == GSON_MODO_KV)
+			if(s_gil[ig].modo == GIL_MODO_KV)
 			{
 				// nome da chave
 				len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
@@ -2445,7 +2429,7 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 		pos_bytes_bk = pos_bytes;
 
 
-		if(tipo_mux != TIPO_GSON_NULL)
+		if(tipo_mux != TIPO_GIL_NULL)
 		{
 			// 0baaabbbbb = a:tipo1, b=tipo2
 			//tipo_mux = tipo1<<5;
@@ -2454,29 +2438,29 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 			tipo2 = tipo_mux&0b11111;
 			//printf("decode: 0baaabbbbb = a:tipo1(%u), b=tipo2()%u tipo_mux:%u\n", tipo1, tipo2, tipo_mux);
 
-			if(tipo1>=GSON_MAX)
+			if(tipo1>=GIL_MAX)
 			{
-				erro = erGSON_31;
+				erro = erGIL_31;
 				goto deu_erro;
 			}
-			if(tipo2>=GSON_tMAX)
+			if(tipo2>=GIL_tMAX)
 			{
-				erro = erGSON_31b;
+				erro = erGIL_31b;
 				goto deu_erro;
 			}
 
-			if(tipo1 == GSON_LIST)
+			if(tipo1 == GIL_LIST)
 			{
 				memcpy(&vezes, &s_gil[ig].bufr[pos_bytes], 2);
 				pos_bytes += 2;
 
 				if(vezes == 0)
 				{
-					erro = erGSON_32;
+					erro = erGIL_32;
 					goto deu_erro;
 				}
 
-				if(tipo2 == GSON_tSTRING)
+				if(tipo2 == GIL_tSTRING)
 				{
 					cont_list_b = s_gil[ig].bufr[pos_bytes];
 					pos_bytes += 1;
@@ -2484,12 +2468,12 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 					if(cont_list_b==0)
 					{
 						// precisamos do offset cru da lista de strings...
-						erro = erGSON_33;
+						erro = erGIL_33;
 						goto deu_erro;
 					}
 				}
 			}
-			else if(tipo1 == GSON_MTX2D)
+			else if(tipo1 == GIL_MTX2D)
 			{
 				cont_list_a = s_gil[ig].bufr[pos_bytes];
 				pos_bytes += 1;
@@ -2501,17 +2485,17 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 				//vezes = cont_list_a * cont_list_b;
 				if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
 				{
-					erro = erGSON_34;
+					erro = erGIL_34;
 					goto deu_erro;
 				}
 			}
-			else  // GSON_SINGLE
+			else  // GIL_SINGLE
 			{
 				// ja alocou 'tipo2'...
 				vezes = 1;
 
 				/*
-				if(tipo2==GSON_tSTRING)
+				if(tipo2==GIL_tSTRING)
 				{
 					if(cont_list_a==0)  // por mais que não vá utilizar... para 1 string somente
 					{
@@ -2539,41 +2523,41 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 
 			switch(tipo2)
 			{
-			case GSON_tBIT:
+			case GIL_tBIT:
 				// nada ainda...
 				break;
-			case GSON_tINT8:
-			case GSON_tUINT8:
+			case GIL_tINT8:
+			case GIL_tUINT8:
 				nbytes=1;
 				break;
-			case GSON_tINT16:
-			case GSON_tUINT16:
+			case GIL_tINT16:
+			case GIL_tUINT16:
 				nbytes=2;
 				break;
-			case GSON_tINT32:
-			case GSON_tUINT32:
+			case GIL_tINT32:
+			case GIL_tUINT32:
 				nbytes=4;
 				break;
-			case GSON_tINT64:
-			case GSON_tUINT64:
+			case GIL_tINT64:
+			case GIL_tUINT64:
 				nbytes=8;
 				break;
-			case GSON_tFLOAT32:
+			case GIL_tFLOAT32:
 				nbytes=4;
 				break;
-			case GSON_tFLOAT64:
+			case GIL_tFLOAT64:
 				nbytes=8;
 				break;
-			case GSON_tSTRING:
+			case GIL_tSTRING:
 				// só vai...
 				break;
 			default:
-				erro = erGSON_35;
+				erro = erGIL_35;
 				goto deu_erro;
 			}
 
 
-			if(tipo2 == GSON_tSTRING)
+			if(tipo2 == GIL_tSTRING)
 			{
 				for(i=0; i<vezes; i++)
 				{
@@ -2586,14 +2570,14 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 					s_gil[ig].pos_bytes += len;
 				}
 			}
-			else if(tipo2 == GSON_tBIT)
+			else if(tipo2 == GIL_tBIT)
 			{
 				// nada ainda...
 			}
 			else
 			{
 				// para o resto é só varer bytes
-				if(tipo1 == GSON_MTX2D)
+				if(tipo1 == GIL_MTX2D)
 				{
 					// vamos ao exemplo:
 					// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
@@ -2643,20 +2627,20 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 
 		//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu2 chave:%u, tipomuxX:%u, tipo1X:%u, tipo2X:%u, pos_bytes:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, vezes:%u\n", chave, tipo_mux, tipo1, tipo2, pos_bytes_bk, cont_list_a, cont_list_b, cont_list_step, vezes);
 
-#if (USO_DEBUG_LIB==1 && PRINT_DEBUG==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1 && GIL_PRINT_DEBUG==1)
+#if (GIL_TYPE_DEVICE==0)
 		printf_DEBUG("DEBUG gilson_decode_data_full_base loop::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
 #else  // PC
 		printf("DEBUG gilson_decode_data_full_base loop::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 
 		s_gil[ig].erro = erro;
 
 		deu_erro:
 
-		if(erro==erGSON_OK)
+		if(erro==erGIL_OK)
 		{
 			s_gil[ig].cont_itens += 1;
 		}
@@ -2672,13 +2656,13 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 	}  // fim while(1)
 
 
-#if (USO_DEBUG_LIB==1 && PRINT_DEBUG==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1 && GIL_PRINT_DEBUG==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_decode_data_full_base::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
 #else  // PC
 	printf("DEBUG gilson_decode_data_full_base::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	return erro;
 }
@@ -2701,13 +2685,13 @@ int32_t gilson_decode_dataKV_full(const uint8_t chave, char *nome_chave, uint8_t
 // só funciona nos modos FULL
 int32_t gilson_decode_dl_init(const uint8_t chave)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 	uint16_t vezes = 1, cont_list_a=0, cont_list_b=0, cont_list_step=0;
 	uint8_t i, tipo_mux=0, tipo1=255, tipo2=255;
 
 	// OBS: não foi testado ainda em modo KV
 
-	if(s_gil[ig].erro != erGSON_OK)
+	if(s_gil[ig].erro != erGIL_OK)
 	{
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		goto deu_erro;
@@ -2715,25 +2699,25 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 
 	if(s_gil[ig].ativo==0)
 	{
-		erro = erGSON_50;
+		erro = erGIL_50;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].tipo_dinamico == 1)
 	{
 		// ja está ativo esse modo... tem que teminar antes para iniciar um novo
-		erro = erGSON_51;
+		erro = erGIL_51;
 		goto deu_erro;
 	}
 
 	if(chave > s_gil[ig].cont_itens2)
 	{
 		// quer ler uma chave maior do que a contagem programada
-		erro = erGSON_52;
+		erro = erGIL_52;
 		goto deu_erro;
 	}
 
-	if(s_gil[ig].bufr[s_gil[ig].pos_bytes] == TIPO_GSON_LDIN)
+	if(s_gil[ig].bufr[s_gil[ig].pos_bytes] == TIPO_GIL_LDIN)
 	{
 		s_gil[ig].tipo_operacao = e_OPER_DECODE;
 
@@ -2755,7 +2739,7 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 	}
 	else
 	{
-		erro = erGSON_53;
+		erro = erGIL_53;
 		goto deu_erro;
 	}
 
@@ -2774,29 +2758,29 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 		//printf("decode: 0baaabbbbb = a:tipo1(%u), b=tipo2()%u tipo_mux:%u\n", tipo1, tipo2, tipo_mux);
 
 
-		if(tipo1>=GSON_MAX)
+		if(tipo1>=GIL_MAX)
 		{
-			erro = erGSON_54;
+			erro = erGIL_54;
 			goto deu_erro;
 		}
-		if(tipo2>=GSON_tMAX)
+		if(tipo2>=GIL_tMAX)
 		{
-			erro = erGSON_54b;
+			erro = erGIL_54b;
 			goto deu_erro;
 		}
 
-		if(tipo1 == GSON_LIST)
+		if(tipo1 == GIL_LIST)
 		{
 			memcpy(&vezes, &s_gil[ig].bufr[s_gil[ig].pos_bytes], 2);
 			s_gil[ig].pos_bytes += 2;
 
 			if(vezes == 0)
 			{
-				erro = erGSON_55;
+				erro = erGIL_55;
 				goto deu_erro;
 			}
 
-			if(tipo2 == GSON_tSTRING)
+			if(tipo2 == GIL_tSTRING)
 			{
 				cont_list_b = s_gil[ig].bufr[s_gil[ig].pos_bytes];
 				s_gil[ig].pos_bytes += 1;
@@ -2804,12 +2788,12 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 				if(cont_list_b==0)
 				{
 					// precisamos do offset cru da lista de strings...
-					erro = erGSON_56;
+					erro = erGIL_56;
 					goto deu_erro;
 				}
 			}
 		}
-		else if(tipo1 == GSON_MTX2D)
+		else if(tipo1 == GIL_MTX2D)
 		{
 			cont_list_a = s_gil[ig].bufr[s_gil[ig].pos_bytes];
 			s_gil[ig].pos_bytes += 1;
@@ -2821,17 +2805,17 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 			//vezes = cont_list_a * cont_list_b;
 			if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
 			{
-				erro = erGSON_57;
+				erro = erGIL_57;
 				goto deu_erro;
 			}
 		}
-		else  // GSON_SINGLE
+		else  // GIL_SINGLE
 		{
 			// ja alocou 'tipo2'...
 			vezes = 1;
 
 			/*
-			if(tipo2==GSON_tSTRING)
+			if(tipo2==GIL_tSTRING)
 			{
 				if(cont_list_a==0)  // por mais que não vá utilizar... para 1 string somente
 				{
@@ -2849,7 +2833,7 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 
 	deu_erro:
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		s_gil[ig].cont_itens += 1;
 	}
@@ -2859,13 +2843,13 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 	}
 
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_decode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, s_gil[ig].tam_list, s_gil[ig].nitens);
 #else  // PC
 	printf("DEBUG gilson_decode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, s_gil[ig].tam_list, s_gil[ig].nitens);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	return erro;
 }
@@ -2873,19 +2857,19 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 /*
 int32_t gilson_decode_dl_data_zip(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 	char temp[4];
 
 	if(s_gil[ig].tipo_operacao!=e_OPER_DECODE)
 	{
-		erro = erGSON_OPER;
+		erro = erGIL_OPER;
 		goto deu_erro;
 	}
 
 	if(item > s_gil[ig].nitens)
 	{
 		// quer add uma item maior do que a contagem crescente... não tem como
-		erro = erGSON_59;
+		erro = erGIL_59;
 		goto deu_erro;
 	}
 
@@ -2899,7 +2883,7 @@ int32_t gilson_decode_dl_data_zip(const uint8_t item, const uint8_t tipo1, const
 
 	deu_erro:
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		s_gil[ig].cont_tipo_dinamico += 1;
 	}
@@ -2907,13 +2891,13 @@ int32_t gilson_decode_dl_data_zip(const uint8_t item, const uint8_t tipo1, const
 	{
 		s_gil[ig].erro = erro;
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 		printf_DEBUG("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u\n", ig, erro, s_gil[ig].modo, item);
 #else  // PC
 		printf("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u\n", ig, erro, s_gil[ig].modo, item);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	}
 
@@ -2923,26 +2907,26 @@ int32_t gilson_decode_dl_data_zip(const uint8_t item, const uint8_t tipo1, const
 
 int32_t gilson_decode_dl_data(const uint8_t item, uint8_t *valor)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 	char temp[4];
 
-	// somente funciona no modo 'GSON_MODO_FULL' e 'GSON_MODO_KV'!!!!
-	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
+	// somente funciona no modo 'GIL_MODO_FULL' e 'GIL_MODO_KV'!!!!
+	if(s_gil[ig].modo != GIL_MODO_FULL && s_gil[ig].modo != GIL_MODO_KV)
 	{
-		erro = erGSON_58;
+		erro = erGIL_58;
 		goto deu_erro;
 	}
 
 	if(s_gil[ig].tipo_operacao!=e_OPER_DECODE)
 	{
-		erro = erGSON_OPER;
+		erro = erGIL_OPER;
 		goto deu_erro;
 	}
 
 	if(item > s_gil[ig].nitens)
 	{
 		// quer ler uma item maior do que a contagem crescente... não tem como
-		erro = erGSON_59;
+		erro = erGIL_59;
 		goto deu_erro;
 	}
 
@@ -2956,7 +2940,7 @@ int32_t gilson_decode_dl_data(const uint8_t item, uint8_t *valor)
 
 	deu_erro:
 
-	if(erro==erGSON_OK)
+	if(erro==erGIL_OK)
 	{
 		s_gil[ig].cont_tipo_dinamico += 1;
 	}
@@ -2964,13 +2948,13 @@ int32_t gilson_decode_dl_data(const uint8_t item, uint8_t *valor)
 	{
 		s_gil[ig].erro = erro;
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 		printf_DEBUG("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u, chave_dl:%u\n", ig, erro, s_gil[ig].modo, item, s_gil[ig].chave_dl);
 #else  // PC
 		printf("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u, chave_dl:%u\n", ig, erro, s_gil[ig].modo, item, s_gil[ig].chave_dl);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	}
 
@@ -2981,27 +2965,27 @@ int32_t gilson_decode_dl_data(const uint8_t item, uint8_t *valor)
 
 int32_t gilson_decode_dl_end(void)
 {
-	int32_t erro=erGSON_OK;
+	int32_t erro=erGIL_OK;
 
 	// se não bateu o numero de 'tam_list' e/ou 'nitens' da pra gerar um erro...
 	if(s_gil[ig].tipo_dinamico == 0)
 	{
-		erro = erGSON_60;
+		erro = erGIL_60;
 	}
 	else if(s_gil[ig].cont_tipo_dinamico != s_gil[ig].tam_list*s_gil[ig].nitens)
 	{
 		// total de itens geral não bate a conta com o programado
-		erro = erGSON_61;
+		erro = erGIL_61;
 	}
 
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_decode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
 #else  // PC
 	printf("DEBUG gilson_decode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	s_gil[ig].tipo_dinamico = 0;  // finalizando o tratar um tipo dinamico
 
@@ -3027,13 +3011,13 @@ int32_t gilson_decode(const uint8_t chave, ...)
 
 	va_start(argptr, chave);
 
-	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
 		//erro = valida_nome_chave(nome_chave);
 	}
 
-	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
+	if(s_gil[ig].modo != GIL_MODO_FULL && s_gil[ig].modo != GIL_MODO_KV)
 	{
 		tipo1 = (uint8_t)va_arg(argptr, int);
 		tipo2 = (uint8_t)va_arg(argptr, int);
@@ -3044,22 +3028,22 @@ int32_t gilson_decode(const uint8_t chave, ...)
 
 	if(modofull==0)
 	{
-		if(tipo1 == GSON_SINGLE)
+		if(tipo1 == GIL_SINGLE)
 		{
-			if(tipo2 == GSON_tSTRING)
+			if(tipo2 == GIL_tSTRING)
 			{
 				cont_list_a = (uint16_t)va_arg(argptr, int);
 			}
 		}
-		else if(tipo1 == GSON_LIST)
+		else if(tipo1 == GIL_LIST)
 		{
 			cont_list_a = (uint16_t)va_arg(argptr, int);
-			if(tipo2 == GSON_tSTRING)
+			if(tipo2 == GIL_tSTRING)
 			{
 				cont_list_b = (uint16_t)va_arg(argptr, int);
 			}
 		}
-		else if(tipo1 == GSON_MTX2D)
+		else if(tipo1 == GIL_MTX2D)
 		{
 			cont_list_a = (uint16_t)va_arg(argptr, int);
 			cont_list_b = (uint16_t)va_arg(argptr, int);
@@ -3092,17 +3076,17 @@ int32_t gilson_decode(const uint8_t chave, ...)
 // só funciona para modos FULL
 int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chaves, const uint8_t *pack)
 {
-	int32_t erro=erGSON_OK, pos_bytes=0;
+	int32_t erro=erGIL_OK, pos_bytes=0;
 	uint8_t modo=0, i, dummy;
-	char temp[LEN_MAX_CHAVE_NOME];  // dummy
+	char temp[GIL_LIMIT_KEY_NAME];  // dummy
 
 	//printf("tamanho de map_full:%lu\n", sizeof(map_full));
 
 	erro = gilson_decode_init(pack, &modo);
 
-	if(modo == GSON_MODO_FULL || modo == GSON_MODO_KV)
+	if(modo == GIL_MODO_FULL || modo == GIL_MODO_KV)
 	{
-		if(tot_chaves>s_gil[ig].cont_itens2 && FLAG_NEW_KEY==1)
+		if(tot_chaves>s_gil[ig].cont_itens2 && GIL_FLAG_NEW_KEY==1)
 		{
 			// se tudo certo o pacote é o mesmo porem uma nova versao com mais chaves... que vamos ignorar as novas
 			tot_chaves = s_gil[ig].cont_itens2;
@@ -3125,13 +3109,13 @@ int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chave
 		}
 		else
 		{
-			// e se if(tot_chaves > LIMIT_GSON_KEYS)  erro = erGSON_LIMKEY;
-			erro = erGSON_DIFKEY;
+			// e se if(tot_chaves > LIMIT_GIL_KEYS)  erro = erGIL_LIMKEY;
+			erro = erGIL_DIFKEY;
 		}
 	}
 	else
 	{
-		erro =  erGSON_DIFKEYb;
+		erro =  erGIL_DIFKEYb;
 	}
 
 	memset(&s_gil[ig], 0x00, sizeof(s_gil[ig]));  // limpa para liberar pois não vamos continuar o decode...
@@ -3168,13 +3152,13 @@ int32_t gilson_decode_mapfix(const uint16_t *map, ...)
 	tipo1 = map[1];
 	tipo2 = map[2];
 
-	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
 		//erro = valida_nome_chave(nome_chave);
 	}
 
-	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
+	if(s_gil[ig].modo != GIL_MODO_FULL && s_gil[ig].modo != GIL_MODO_KV)
 	{
 		modofull = 0;
 	}
@@ -3183,22 +3167,22 @@ int32_t gilson_decode_mapfix(const uint16_t *map, ...)
 
 	if(modofull==0)
 	{
-		if(tipo1 == GSON_SINGLE)
+		if(tipo1 == GIL_SINGLE)
 		{
-			if(tipo2 == GSON_tSTRING)
+			if(tipo2 == GIL_tSTRING)
 			{
 				cont_list_a = map[3];
 			}
 		}
-		else if(tipo1 == GSON_LIST)
+		else if(tipo1 == GIL_LIST)
 		{
 			cont_list_a = map[3];
-			if(tipo2 == GSON_tSTRING)
+			if(tipo2 == GIL_tSTRING)
 			{
 				cont_list_b = map[4];
 			}
 		}
-		else if(tipo1 == GSON_MTX2D)
+		else if(tipo1 == GIL_MTX2D)
 		{
 			cont_list_a = map[3];
 			cont_list_b = map[4];
@@ -3248,13 +3232,13 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 	tipo1 = map[1];
 	tipo2 = map[2];
 
-	if(s_gil[ig].modo == GSON_MODO_KV || s_gil[ig].modo == GSON_MODO_KV_ZIP)
+	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
 		nome_chave = va_arg(argptr, char *);
 		//erro = valida_nome_chave(nome_chave);
 	}
 
-	if(s_gil[ig].modo != GSON_MODO_FULL && s_gil[ig].modo != GSON_MODO_KV)
+	if(s_gil[ig].modo != GIL_MODO_FULL && s_gil[ig].modo != GIL_MODO_KV)
 	{
 		//tipo1 = (uint8_t)va_arg(argptr, int);  vai ter que bater caso seja FULL
 		//tipo2 = (uint8_t)va_arg(argptr, int);  vai ter que bater caso seja FULL
@@ -3265,22 +3249,22 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 
 	if(modofull==0)
 	{
-		if(tipo1 == GSON_SINGLE)
+		if(tipo1 == GIL_SINGLE)
 		{
-			if(tipo2 == GSON_tSTRING)
+			if(tipo2 == GIL_tSTRING)
 			{
 				cont_list_a = (uint16_t)va_arg(argptr, int);
 			}
 		}
-		else if(tipo1 == GSON_LIST)
+		else if(tipo1 == GIL_LIST)
 		{
 			cont_list_a = (uint16_t)va_arg(argptr, int);
-			if(tipo2 == GSON_tSTRING)
+			if(tipo2 == GIL_tSTRING)
 			{
 				cont_list_b = (uint16_t)va_arg(argptr, int);
 			}
 		}
-		else if(tipo1 == GSON_MTX2D)
+		else if(tipo1 == GIL_MTX2D)
 		{
 			cont_list_a = (uint16_t)va_arg(argptr, int);
 			cont_list_b = (uint16_t)va_arg(argptr, int);
@@ -3306,32 +3290,32 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 }
 
 
-// somente para 'GSON_MODO_FULL'
+// somente para 'GIL_MODO_FULL'
 // buffer 'pack' deve suportar o pacote completo para alocar o resultado em 'valor'
 int32_t gilson_decode_key(const uint8_t *pack, const uint8_t chave, uint8_t *valor)
 {
-	int32_t erro=erGSON_OK, pos_bytes=0;
+	int32_t erro=erGIL_OK, pos_bytes=0;
 	uint8_t modo=0;
 
 	erro = gilson_decode_init(pack, &modo);
-	if(erro==0 && modo==GSON_MODO_FULL)
+	if(erro==0 && modo==GIL_MODO_FULL)
 	{
 		erro = gilson_decode(chave, valor);
 		pos_bytes = gilson_decode_end();
 	}
 	else
 	{
-		erro = erGSON_62;
+		erro = erGIL_62;
 	}
 
 
-#if (USO_DEBUG_LIB==1)
-#if (TIPO_DEVICE==0)
+#if (GIL_DEBUG_LIB==1)
+#if (GIL_TYPE_DEVICE==0)
 	printf_DEBUG("DEBUG gilson_decode_key::: erro:%i, modo:%u, chave:%u, pos_bytes:%i\n", erro, modo, chave, pos_bytes);
 #else  // PC
 	printf("DEBUG gilson_decode_key::: erro:%i, modo:%u, chave:%u, pos_bytes:%i\n", erro, modo, chave, pos_bytes);
-#endif  // #if (TIPO_DEVICE==1)
-#endif  // #if (USO_DEBUG_LIB==1)
+#endif  // #if (GIL_TYPE_DEVICE==1)
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 
 	return erro;
@@ -3339,7 +3323,7 @@ int32_t gilson_decode_key(const uint8_t *pack, const uint8_t chave, uint8_t *val
 
 
 
-#if (TESTE_GSON_MODO_JSON==1)
+#if (GIL_TESTE_MODO_JSON==1)
 //=================================================================================================================================================
 //=================================================================================================================================================
 //=================================================================================================================================================
@@ -3519,11 +3503,11 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 		// f32 ou f64????
 		if(len_deci>5)
 		{
-			tipo = GSON_tFLOAT64;
+			tipo = GIL_tFLOAT64;
 		}
 		else
 		{
-			tipo = GSON_tFLOAT32;
+			tipo = GIL_tFLOAT32;
 
 			/*
 			// analisar se está dentro dos limites MAX e MIN do FLOAT32
@@ -3531,7 +3515,7 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 			double valor_flut = atof(str_num);
 			if(valor_flut > FLT_MAX || valor_flut < FLT_MIN)
 			{
-				tipo = GSON_tFLOAT64;
+				tipo = GIL_tFLOAT64;
 			}
 			*/
 		}
@@ -3547,19 +3531,19 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 
 			if(valor_int>=INT8_MIN)
 			{
-				tipo = GSON_tINT8;  // s8
+				tipo = GIL_tINT8;  // s8
 			}
 			else if(valor_int>=INT16_MIN)
 			{
-				tipo = GSON_tINT16;  // s16
+				tipo = GIL_tINT16;  // s16
 			}
 			else if(valor_int>=INT32_MIN)  // -2147483648
 			{
-				tipo = GSON_tINT32;  // s32
+				tipo = GIL_tINT32;  // s32
 			}
 			else
 			{
-				tipo = GSON_tINT64;  // s64
+				tipo = GIL_tINT64;  // s64
 			}
 			flag_neg_ok=1;  // fica sempre em 1
 		}
@@ -3573,7 +3557,7 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 
 			if(valor_int<=UINT8_MAX)
 			{
-				tipo = GSON_tUINT8;  // u8
+				tipo = GIL_tUINT8;  // u8
 				if(valor_int<=INT8_MAX)
 				{
 					flag_neg_ok=1;
@@ -3581,7 +3565,7 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 			}
 			else if(valor_int<=UINT16_MAX)
 			{
-				tipo = GSON_tUINT16;  // u16
+				tipo = GIL_tUINT16;  // u16
 				if(valor_int<=INT16_MAX)
 				{
 					flag_neg_ok=1;
@@ -3589,7 +3573,7 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 			}
 			else if(valor_int<=UINT32_MAX)
 			{
-				tipo = GSON_tUINT32;  // u32
+				tipo = GIL_tUINT32;  // u32
 				if(valor_int<=INT32_MAX)
 				{
 					flag_neg_ok=1;
@@ -3601,7 +3585,7 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 				{
 					flag_neg_ok=1;
 				}
-				tipo = GSON_tUINT64;  // u64
+				tipo = GIL_tUINT64;  // u64
 			}
 			// se 'flag_neg_ok' == 1 significa que esse inteiro positivo cabe dentro do 'signed intX' dele...
 		}
@@ -3621,52 +3605,52 @@ static void *get_num_limit(const int tipo_ori)
 	uint8_t num[8]={0};  // pior caso que ocupa 8 bytes!
 	void* ptr = NULL;
 
-	if(tipo_ori==GSON_tINT8)
+	if(tipo_ori==GIL_tINT8)
 	{
 		*(uint8_t*)num = INT8_MAX;
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tUINT8)
+	else if(tipo_ori==GIL_tUINT8)
 	{
 		*(uint8_t*)num = UINT8_MAX;
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tINT16)
+	else if(tipo_ori==GIL_tINT16)
 	{
 		*(int16_t*)num = INT16_MAX;
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tUINT16)
+	else if(tipo_ori==GIL_tUINT16)
 	{
 		*(uint16_t*)num = UINT16_MAX;
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tINT32)
+	else if(tipo_ori==GIL_tINT32)
 	{
 		*(int32_t*)num = INT32_MAX;
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tUINT32)
+	else if(tipo_ori==GIL_tUINT32)
 	{
 		*(uint32_t*)num = UINT32_MAX;
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tINT64)
+	else if(tipo_ori==GIL_tINT64)
 	{
 		*(int64_t*)num = INT64_MAX;
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tUINT64)
+	else if(tipo_ori==GIL_tUINT64)
 	{
 		*(uint64_t*)num = UINT64_MAX;
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tFLOAT32)
+	else if(tipo_ori==GIL_tFLOAT32)
 	{
 		*(float*)num = 3.402823e38;  // gambiiiii
 		ptr = num;
 	}
-	else if(tipo_ori==GSON_tFLOAT64)
+	else if(tipo_ori==GIL_tFLOAT64)
 	{
 		*(double*)num = 1.79769313e308;  // gambiiiii
 		ptr = num;
@@ -3682,7 +3666,7 @@ static int valid_num_limit(const uint8_t *valor, const int tipo_ori, const int t
 
 	// com o 'tipo_valida' eu sei qual o maior valor dele permitido/limite...
 
-	if(tipo_ori==GSON_tINT8)
+	if(tipo_ori==GIL_tINT8)
 	{
 		//printf("valor:%i e limit:%li\n", *(int8_t*)valor, *(int64_t *)get_num_limit(tipo_valida));
 		if(*(int8_t*)valor <= INT8_MAX)
@@ -3690,56 +3674,56 @@ static int valid_num_limit(const uint8_t *valor, const int tipo_ori, const int t
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tUINT8)
+	else if(tipo_ori==GIL_tUINT8)
 	{
 		if(*(uint8_t*)valor <= UINT8_MAX)
 		{
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tINT16)
+	else if(tipo_ori==GIL_tINT16)
 	{
 		if(*(int16_t*)valor <= INT16_MAX)
 		{
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tUINT16)
+	else if(tipo_ori==GIL_tUINT16)
 	{
 		if(*(uint16_t*)valor <= UINT16_MAX)
 		{
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tINT32)
+	else if(tipo_ori==GIL_tINT32)
 	{
 		if(*(int32_t*)valor <= INT32_MAX)
 		{
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tUINT32)
+	else if(tipo_ori==GIL_tUINT32)
 	{
 		if(*(uint32_t*)valor <= UINT32_MAX)
 		{
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tINT64)
+	else if(tipo_ori==GIL_tINT64)
 	{
 		if(*(int64_t*)valor <= INT64_MAX)
 		{
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tUINT64)
+	else if(tipo_ori==GIL_tUINT64)
 	{
 		if(*(uint64_t*)valor <= UINT64_MAX)
 		{
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tFLOAT32)
+	else if(tipo_ori==GIL_tFLOAT32)
 	{
 		//  *(float*)num = 3.402823e38;  // gambiiiii
 		//ptr = num;
@@ -3748,7 +3732,7 @@ static int valid_num_limit(const uint8_t *valor, const int tipo_ori, const int t
 			flag_ok = 1;
 		}
 	}
-	else if(tipo_ori==GSON_tFLOAT64)
+	else if(tipo_ori==GIL_tFLOAT64)
 	{
 		//  *(double*)num = 1.79769313e308;  // gambiiiii
 		//ptr = num;
@@ -3763,56 +3747,56 @@ static int valid_num_limit(const uint8_t *valor, const int tipo_ori, const int t
 static int check_num_limit(const char *num, const int tipo_ori, const int tipo_check)
 {
 	int num_ok=0;
-	if(tipo_ori==GSON_tINT8)
+	if(tipo_ori==GIL_tINT8)
 	{
 		const int8_t valor = (int8_t)atoi(num);
 		//num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 		//chama aqui mesmooo
 	}
-	else if(tipo_ori==GSON_tUINT8)
+	else if(tipo_ori==GIL_tUINT8)
 	{
 		const uint8_t valor = (uint8_t)atoi(num);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 	}
-	else if(tipo_ori==GSON_tINT16)
+	else if(tipo_ori==GIL_tINT16)
 	{
 		const int16_t valor = (int16_t)atoi(num);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 	}
-	else if(tipo_ori==GSON_tUINT16)
+	else if(tipo_ori==GIL_tUINT16)
 	{
 		const uint16_t valor = (uint16_t)atoi(num);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 	}
-	else if(tipo_ori==GSON_tINT32)
+	else if(tipo_ori==GIL_tINT32)
 	{
 		const int32_t valor = (int32_t)atol(num);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 	}
-	else if(tipo_ori==GSON_tUINT32)
+	else if(tipo_ori==GIL_tUINT32)
 	{
 		const uint32_t valor = (uint32_t)atoll(num);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 	}
-	else if(tipo_ori==GSON_tINT64)
+	else if(tipo_ori==GIL_tINT64)
 	{
 		char *endptr;
 		const int64_t valor = (int64_t)strtoll(num, &endptr, 10);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 	}
-	else if(tipo_ori==GSON_tUINT64)
+	else if(tipo_ori==GIL_tUINT64)
 	{
 		char *endptr;
 		//errno = 0;  // Limpa possíveis erros anteriores
 		const uint64_t valor = (uint64_t)strtoull(num, &endptr, 10);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 	}
-	else if(tipo_ori==GSON_tFLOAT32)
+	else if(tipo_ori==GIL_tFLOAT32)
 	{
 		const float valor = (float)atof(num);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
 	}
-	else if(tipo_ori==GSON_tFLOAT64)
+	else if(tipo_ori==GIL_tFLOAT64)
 	{
 		const double valor = (double)atof(num);
 		num_ok = valid_num_limit((uint8_t *)&valor, tipo_ori, tipo_check);
@@ -3826,30 +3810,30 @@ int get_nbytes(const uint8_t tipo2)
 	int nbytes=0;
 	switch(tipo2)
 	{
-	case GSON_tBIT:
+	case GIL_tBIT:
 		// nada ainda...
 		nbytes = 1;
 		break;
-	case GSON_tINT8:
-	case GSON_tUINT8:
+	case GIL_tINT8:
+	case GIL_tUINT8:
 		nbytes = 1;
 		break;
-	case GSON_tINT16:
-	case GSON_tUINT16:
+	case GIL_tINT16:
+	case GIL_tUINT16:
 		nbytes = 2;
 		break;
-	case GSON_tINT32:
-	case GSON_tUINT32:
+	case GIL_tINT32:
+	case GIL_tUINT32:
 		nbytes = 4;
 		break;
-	case GSON_tINT64:
-	case GSON_tUINT64:
+	case GIL_tINT64:
+	case GIL_tUINT64:
 		nbytes = 8;
 		break;
-	case GSON_tFLOAT32:
+	case GIL_tFLOAT32:
 		nbytes = 4;
 		break;
-	case GSON_tFLOAT64:
+	case GIL_tFLOAT64:
 		nbytes = 8;
 		break;
 	default:
@@ -4018,10 +4002,10 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 				}
 				else if(tipo_atual==2)
 				{
-					tipo_valor = GSON_tSTRING;
+					tipo_valor = GIL_tSTRING;
 					printf("======STR LISTA:|%.*s|\n", j, &str_lista[temp1]);
 
-					if(j>LEN_MAX_STRING)
+					if(j>LIMIT_GIL_STRING)
 					{
 						return -3;
 					}
@@ -4116,7 +4100,7 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 				else
 				{
 					maior_tipo_def = maior_tipo_num2+1;
-					if(maior_tipo_def>=GSON_tFLOAT32)
+					if(maior_tipo_def>=GIL_tFLOAT32)
 					{
 						// malucooo não tem comooo....
 						return -4;
@@ -4246,7 +4230,7 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 	}
 
 
-	// [0] = GSON_MODO_JSON
+	// [0] = GIL_MODO_JSON
 	// [1:5] = 4B crc32
 	// [5:9] = 4B len_json
 	// [7:8] = 4B len_gilson
@@ -4633,12 +4617,12 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 
 int32_t gilson_decode_to_json(uint8_t *pack, char *json_out)
 {
-	// modo == GSON_MODO_KV, se não for esse... tem que passar o mapa e os nomes das chaves... ou caso seja GSON_MODO_FULL somente os nomes das chaves
+	// modo == GIL_MODO_KV, se não for esse... tem que passar o mapa e os nomes das chaves... ou caso seja GIL_MODO_FULL somente os nomes das chaves
 
-	//GSON_MODO_JSON
+	//GIL_MODO_JSON
 
 	return 0;
 }
 
-#endif  // #if (TESTE_GSON_MODO_JSON==1)
+#endif  // #if (GIL_TESTE_MODO_JSON==1)
 
