@@ -11,8 +11,8 @@
  ============================================================================
  Name			: gilson_c
  Author			: matheus j. mella
- Version		: 0.57
- Date			: 17/01/26
+ Version		: 0.58
+ Date			: 17/02/26
  Description	: biblioteca 'gilson'
  GitHub			: https://github.com/casimirdes/gilson
  ============================================================================
@@ -23,21 +23,17 @@
 #ifndef GILSON_H_
 #define GILSON_H_
 
-#define GIL_TESTE_MODO_JSON 	0  // ainda experimental...
-#define GIL_FLAG_NEW_KEY		1  // para erros do tipo 'erGIL_23b' e 'erGIL_30'::: 0=retorno com erro, 1=avança e limpa data
-
-#define CAST_GIL	(uint8_t *)&  // forma bem deselegante de padronizar para fazer o 'casting'
-
-#define GIL_LIMIT_KEYS			255  // até 255 chaves cada pacote gilson, (0 a 254)
-#define GIL_LIMIT_STRING		255  // tamanho maximo de um item que é do tipo string, seja 'GIL_SINGLE' ou 'GIL_LIST'
-#define GIL_LIMIT_KEY_NAME		16  // tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GIL_MODO_KV'
-
-
 // para fins de plataforma e debug
 #define GIL_TYPE_DEVICE			1  // 0=microcontrolador, 1=PC
 #define GIL_DEBUG_LIB			0  // ativa os prints debug, mais dedicado a PC
 #define GIL_PRINT_DEBUG			0  // 1 = printa toda vida o debug
 
+#define GIL_TESTE_MODO_JSON 	0  // ainda experimental...
+#define GIL_FLAG_NEW_KEY		1  // para erros do tipo 'erGIL_23b' e 'erGIL_30'::: 0=retorno com erro, 1=avança e limpa data
+
+#define GIL_LIMIT_KEYS			255  // até 255 chaves cada pacote gilson, (0 a 254)
+#define GIL_LIMIT_STRING		255  // tamanho maximo de um item que é do tipo string, seja 'GIL_SINGLE' ou 'GIL_LIST'
+#define GIL_LIMIT_KEY_NAME		32  // tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GIL_MODO_KV'
 
 // GIL_SIZE_RAM = como a RAM é 'medida/vista' no sistema: uint8_t, uint16_t, uint32_t, uint64_t, (ex.: PC de 64bits = uint64_t, STM32/ESP32 = 32bits = uint32_t, atmega328p=uint16_t)
 #if (GIL_TYPE_DEVICE==1)
@@ -45,6 +41,9 @@
 #else
 #define GIL_SIZE_RAM		uint32_t
 #endif  // #if (GIL_TYPE_DEVICE==1)
+
+#define CAST_GIL	(uint8_t *)&  // forma bem deselegante de padronizar para fazer o 'casting'
+
 
 enum e_MODO_GILSON
 {

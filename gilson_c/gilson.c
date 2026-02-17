@@ -3480,7 +3480,7 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 	// float ou double? se total de casas decimais for >5~6 entao passa para double, ou entao se a parte inteira for >10e7 entao é double
 	//double valor_flut = 0;
 	//uint64_t valor_int=0;
-	int tipo=0, pos, flag_neg_ok=0;
+	int tipo=-1, pos, flag_neg_ok=0;
 	uint8_t flag_neg=0, flag_flu=0, len=0, len_int=0, len_deci=0;
 
 	len = strlen(str_num);
@@ -3594,7 +3594,7 @@ static int info_numero(const char *str_num, int *flag_neg_ok_)
 	*flag_neg_ok_ = flag_neg_ok;  // 0=indica que o valor não cabe no limite positivo do sX 'signed' do unsigned em questão..., 1=o valor em questao cabe dentro do seu valor no tipo 'signed'
 
 	// IMPAR=unsigned e PAR=signed
-	return tipo;  // 0=erro, 'e_TIPOS2_GILSON'...
+	return tipo;  // -1=erro, 'e_TIPOS2_GILSON'...
 }
 
 
@@ -3849,7 +3849,9 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 	int tipo_valor, tipo_misturado=0, tipo_atual=0, maior_tipo_num1, maior_tipo_num2, maior_tipo_num1neg, maior_tipo_num2neg, maior_tipo_def, maior_tipo_valid, flag_neg_ok, tot_bytes_v1=0, tot_bytes_v2=0, nbytes;
 	int nivel_matriz[20]={0};
 	uint8_t flag_flut=0, flag_neg=0, k;
-	char buff[20]={0}, sms_nivel_matriz[20]={0};
+	char buff[23]={0}, sms_nivel_matriz[20]={0};
+
+	// OBS: vamos chamar muitas vezes 'count_chr_str' isso pode ser otimizado!!!!
 
 	cont_aspas = count_chr_str(str_lista, '"', len);
 
@@ -3864,7 +3866,7 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 	else
 	{
 		// somente de inteiros
-
+		flag_flut=0;
 	}
 
 	cont_neg = count_chr_str(str_lista, '-', len);
@@ -3883,6 +3885,7 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 	cont_bar1 = count_chr_str(str_lista, ']', len);
 	// tem que bater igual....
 
+	// 'barras_externo' são os colchetes de início e fim...
 	if(barras_externo>7)
 	{
 		// matriz fora da faixa analisada, dai tu qué mata o galo veio tchee
@@ -3954,7 +3957,11 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 	}
 
 
-	// vamos varrer todos os 'cont_elementos' e detectar qual tipo de cada lista da matriz porem temos que padronizar um tipo entao se tiver 1 float, tudo vai ser float, se tudo fora <256 tudo vai ser u8...
+	// vamos varrer todos os 'cont_elementos' e detectar qual tipo de cada lista da matriz
+	// porem temos que padronizar um tipo geral para toda lista
+	// entao, se tiver 1 float, tudo vai ser float,
+	// se tudo for inteiro e <256 tudo vai ser u8...
+
 	tot_bytes_v1=0;
 	i=0;
 	j=0;
@@ -3972,11 +3979,17 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 			i+=1;
 			if(j)
 			{
-				if(tipo_atual==1)//if(cont_aspas==0)
+				if(tipo_atual==1)  //if(cont_aspas==0)
 				{
 					flag_neg_ok=0;
 					tipo_valor = info_numero(buff, &flag_neg_ok);
 					printf("======NUM LISTA:|%s| (tipo=%u neg_ok:%u)\n", buff, tipo_valor, flag_neg_ok);
+
+					if(tipo_valor == -1)
+					{
+						return -3;
+					}
+
 					memset(buff, 0x00, sizeof(buff));
 
 					//-----------------------------------------------------
@@ -3998,16 +4011,16 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 					//printf("maiores::: negativo:%u(%u), positivo:%u(%u)\n", maior_tipo_num1, maior_tipo_num1neg, maior_tipo_num2, maior_tipo_num2neg);
 
 					nbytes = get_nbytes(tipo_valor);
-					tot_bytes_v1 += (1+nbytes);
+					tot_bytes_v1 += (1+nbytes);  // está errado somar assim a lista de números...??????????
 				}
 				else if(tipo_atual==2)
 				{
 					tipo_valor = GIL_tSTRING;
 					printf("======STR LISTA:|%.*s|\n", j, &str_lista[temp1]);
 
-					if(j>LIMIT_GIL_STRING)
+					if(j>GIL_LIMIT_STRING)
 					{
-						return -3;
+						return -4;
 					}
 
 					tot_bytes_v1 += (1+j-2);  // desconta as aspas e soma o bytes de tamanho
@@ -4019,14 +4032,20 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 			}
 		}
 
+		// ta meio estranho essa análise aqui... lendo depois de meses...
+		// podemos usar o 'cont_aspas' ou detectar '"' e ja saber exato que se trata de uma string ou numero
+		// pois podem haver strings que conte numeros e caracter '.', ',', '-'... porem está tudo entre aspas duplas...
+
 		if((tipo_atual==0 || tipo_atual==1) && ((str_lista[i] >= '0' && str_lista[i] <= '9') || str_lista[i] == '-' || str_lista[i] == '.'))
 		{
+			// filtro para provável número, via 'tipo_atual' em 1, vai alocando em 'buff' o número
 			tipo_atual=1;
 			buff[j] = str_lista[i];
 			j+=1;
 		}
 		else if((tipo_atual==0 || tipo_atual==2) && (str_lista[i] != '[' && str_lista[i] != ']' && str_lista[i] != ','))
 		{
+			// filtro para provável string, via 'tipo_atual' em 2, vai contando tamanho em 'j'
 			tipo_atual=2;
 			if(j==0)
 			{
@@ -4034,8 +4053,6 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 			}
 			j+=1;
 		}
-
-
 
 		i+=1;
 		if(i>=len) break;
@@ -4055,7 +4072,7 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 	if(cont_aspas==0 && tipo_misturado==0)
 	{
 		// etapa finallllll
-		// temos o maior PAR e maior IMPAR, em maior_tipo_num1, maior_tipo_num2 respectivamente... agora basta saber se todos os numeros cabem nesse 'tipo' escolhido!!!
+		// temos o maior PAR e maior IMPAR, em 'maior_tipo_num1', 'maior_tipo_num2' respectivamente... agora basta saber se todos os numeros cabem nesse 'tipo' escolhido!!!
 		// check_num_limit()
 		/*
 		if(maior_tipo_num1 > maior_tipo_num2)
@@ -4214,36 +4231,41 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 {
 	// testes...
 	// basicamente é fazer o 'parse' do JSON para detectar chave e valor e quando temos listas ou objeto dentro de objeto e quando é string, inteiro ou flutuante e otimizar para o melhor formato em bytes
-	uint64_t valor_int;
-	double valor_flutuante;
+	uint64_t valor_int;  // pior caso
+	double valor_flutuante;  // pior caso
 	int conts[6]={0};
 	int erro=0, i=0, j=0, k=0, size_json=0, cont_chaves=0, init_obj=0, init_nome_chave=0, init_nome_chave_ok=0, init_nome_valor=0, init_nome_valor_ok=0, pos=0, pos2=0, cont=0, cont_barra=0, check=0, flag_neg_ok;
 	int size_max_pack2=0, size_max_pack_temp=0;
-	char nome_chave[40], nome_valor[40], numero[20];
+	char nome_chave[GIL_LIMIT_KEY_NAME+1], nome_valor[GIL_LIMIT_STRING+1], numero[23];
 
 	size_json = strlen(json_in);
 
+	printf("json_in: %u bytes\n%s\n\n", size_json, json_in);
+
 	if(json_in[0]!='{' || json_in[size_json-1]!='}')
 	{
+		// não tem as chaves de início e fim, ja cai fora então...
 		erro = -1;
 		goto deu_erro;
 	}
 
-
+	// OBS: aqui é possível GISON maior que 64kB 'uint16_t'
 	// [0] = GIL_MODO_JSON
 	// [1:5] = 4B crc32
 	// [5:9] = 4B len_json
-	// [7:8] = 4B len_gilson
-	size_max_pack2 = 13;
+	// [9:13] = 4B len_gilson
+	size_max_pack2 = 13;  // parte do offset geral
 
 	// "{\"sensor\":\"supremo\",\"inteiro\":1234,\"flutuante\":665.2345,\"flag\":false,\"perdido\":null}";
 	// OBS: 'json_in' deve estar compactado no sentido de não ter espaço, quebra de linha, caracteres <=32 onde 32=' '
 
-	// pendências....
+	// pendências.... não aceita ainda JSON nesse formato:
 	// {[1, "texto", true, null, {"chave": "valor"}]}
 	// {[{"nome": "Alice", "idade": 30}, {"nome": "Bob", "idade": 25}]}
 	// {[1, 2, [3, 4, 5], 6]}
 
+	//--------------------------------------------------------------------------------------------------------
+	//--------------------------------------------------------------------------------------------------------
 	// validação inicial
 	for(i=0; i<size_json; i++)
 	{
@@ -4297,19 +4319,24 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 	}
 
 	// debug
-	printf("estatisticas::: conts:(%u, %u, %u, %u, %u) json_in[%u]=|%c| (%u) amostra:|%.20s|\n", conts[0], conts[1], conts[2], conts[3], conts[4], pos, json_in[pos], json_in[pos], &json_in[pos]);
+	printf("validação inicial:::\ncontagens: '{':%u, '}':%u, '<32':%u, '[':%u, ']':%u, json_in[%u]=|%c|(%u)\namostra:|%.20s|\n\n", conts[0], conts[1], conts[2], conts[3], conts[4], pos, json_in[pos], json_in[pos], &json_in[pos]);
 	if(conts[0]>1 || conts[1]>1 || conts[2]>0 || (conts[3]!=conts[4]))
 	{
+		// não pode ter mais de 1 {}
+		// não pode conter ascii <32
+		// se total de [ e ] for diferente, temos erros...
 		erro = -1000;
 		goto deu_erro;
 	}
+	//--------------------------------------------------------------------------------------------------------
+	//--------------------------------------------------------------------------------------------------------
 
 
 
 
 	i=0;
 	cont=0;
-	while(1)//for(i=0; i<size_json; i++)
+	while(1)  //for(i=0; i<size_json; i++)
 	{
 		if(json_in[i]=='{')
 		{
@@ -4318,8 +4345,10 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 
 		if(json_in[i]=='"')
 		{
+			// indica nome da chave ou um valor que é string
 			if(init_nome_chave==0 && init_nome_chave_ok==0)
 			{
+				// indica que é início do nome de uma chave
 				init_nome_chave = 1;
 				j=0;
 				memset(nome_chave, 0x00, sizeof(nome_chave));
@@ -4327,6 +4356,7 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 			}
 			else if(init_nome_chave==1 && init_nome_chave_ok==0)
 			{
+				// indica que é fim do nome de uma chave
 				init_nome_chave = 0;
 				init_nome_chave_ok = 1;
 			}
@@ -4336,13 +4366,20 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 		{
 			nome_chave[j] = json_in[i];
 			j+=1;
+			if(j>GIL_LIMIT_KEY_NAME)
+			{
+				erro = -3;
+				goto deu_erro;
+			}
 		}
 		if(init_nome_chave_ok==1)
 		{
+			// vem aqui logo após detectar final do nome da chave
 			init_nome_chave_ok = 2;  // fica pronto para detectar o valor da chave...
 			// feito o nome da chave
 			printf("===CHAVE:|%s| %u bytes\n", nome_chave, j);
 			size_max_pack2 += (1 + j);
+			// 'j' ficou com o valor da contagem do nome!!!
 		}
 
 		if(json_in[i]==':')
@@ -4360,11 +4397,16 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 					erro = -2;
 					goto deu_erro;
 				}
+				if(pos > GIL_LIMIT_STRING)
+				{
+					erro = -20;
+					goto deu_erro;
+				}
 				memset(nome_valor, 0x00, sizeof(nome_valor));
 				strncpy(nome_valor, &json_in[i+2], pos);
 				printf("===VALOR:|%s| %u bytes\n", nome_valor, pos);
-				size_max_pack2 += (2 + j);
-				i+=(pos+3);  // ja desconta as aspas duplas da string
+				size_max_pack2 += (2 + pos);  // tipo + tamanho + data
+				i+=(pos+3);  // ja desconta as aspas duplas da string + ':'
 			}
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -4382,93 +4424,28 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 						goto deu_erro;
 					}
 				}
+				if(pos > 23)
+				{
+					// numero gigante???
+					erro = -30;
+					goto deu_erro;
+				}
 				memset(numero, 0x00, sizeof(numero));
 				strncpy(numero, &json_in[i+1], pos);
 				flag_neg_ok=0;
 				size_max_pack_temp=0;
 				check = info_numero(numero, &flag_neg_ok);
 				printf("======VALOR:|%s| (tipo=%u, flag_neg_ok:%u)\n", numero, check, flag_neg_ok);
+				if(check == -1)
+				{
+					// tipo de numero não identificado!!!
+					erro = -31;
+					goto deu_erro;
+				}
 				size_max_pack_temp = get_nbytes(check);
-				size_max_pack2 += (1 + size_max_pack_temp);
-				// tem '.' nisso? se sim é um flutuante
-				// quantos algarismos tem? até 255, 65535, 2**32-1, u64
-				// é negativo? (-128 a 127), (-32.768 a 32.767), (-2.147.483.648 a 2.147.483.647) s64
-				// float ou double? se total de casas decimais for >5~6 entao passa para double, ou entao se a parte inteira for >10e7 entao é double
+				size_max_pack2 += (1 + size_max_pack_temp);  // tipo + tamanho em bytes do numero
 
 				i+=(pos+1);
-			}
-			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-			else if(json_in[i+1] == '[')
-			{
-				// =================================   temos VALOR: lista (pode ser multiplos tipos... string, inteiro, flutuante, tudo misturado)
-				// qual tipo de dados dessa lista???
-				// caso seja multiplas matrizes de n dimensões... busca por "]," ou "]}"
-				// OBS: limite até [x][y] matriz dupla!!!!!!!! o GILSON
-				pos = pos_str_chr(&json_in[i+1], ']');  // vamos achar o primeiro fechada de lista... porem sabemos que tem varios tipos de lista e listas dentro de listas...
-				if(pos==-1)
-				{
-					// não achou o final da lista, temos problema!!!
-					erro = -4;
-					goto deu_erro;
-				}
-				cont_barra=0;
-				for(k=0; k<pos; k++)
-				{
-					if(json_in[(i+1)+k] == '[')
-					{
-						cont_barra+=1;
-					}
-					else
-					{
-						// achou o primeiro diferente de '[' sai fora
-						break;
-					}
-					/*
-					memset(nome_valor, 0x00, sizeof(nome_valor));
-					memset(nome_valor, ']', cont_barra);
-					pos = pos_str_str(&json_in[i+1], nome_valor);  // vamos achar final da lista
-					if(pos==-1)
-					{
-						erro = -400;
-						goto deu_erro;
-					}
-					pos2=cont_barra;
-					*/
-				}
-				memset(nome_valor, 0x00, sizeof(nome_valor));
-				memset(nome_valor, ']', cont_barra);
-				pos = pos_str_str(&json_in[i+1], nome_valor);  // vamos achar final da lista
-				if(pos==-1)
-				{
-					// não achou o final da lista multipla respectiva do seu início, temos problema!!!
-					erro = -40;
-					goto deu_erro;
-				}
-				pos2=cont_barra;
-				// OBS: (pos+pos2) = final da lista na string geral do json
-				//memset(lista_loco, 0x00, sizeof(lista_loco));
-				//strncpy(lista_loco, &json_in[i+1], (pos+pos2));
-				if(pos2==1)
-				{
-					// lista simples
-					cont = count_chr_str(&json_in[i+1], ',', (pos+pos2)) + 1;
-				}
-				else
-				{
-					// lista dupla ou maior, OBS: nesse caso não é válido pois temos muitos tipos de matrizes e possibilidades, tem que analisar mais profundo
-					cont = count_str_str(&json_in[i+1], "],", (pos+pos2)) + 1;
-				}
-				check = info_lista(&json_in[i+1], (pos+pos2), cont_barra, &size_max_pack_temp);
-				printf("======VALOR LISTA (tipo:%u, %u itens? check:%i size_max_pack_temp:%u):|%.*s|\n", pos2, cont, check, size_max_pack_temp, (pos+pos2), &json_in[i+1]);
-				if(check!=0)
-				{
-					erro = -41;
-					goto deu_erro;
-				}
-				size_max_pack2 += (1 + size_max_pack_temp);
-
-				i+=(pos+pos2);  // ja desconta '[' e ']'
 			}
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -4495,7 +4472,8 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 					goto deu_erro;
 				}
 				printf("======VALOR:|%s| check:%u\n", nome_valor, check);
-				size_max_pack2 += (1 + 1);
+				size_max_pack2 += (1 + 1);  // tipo + valor do bit
+
 				i+=(pos+1);
 			}
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -4523,7 +4501,8 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 					goto deu_erro;
 				}
 				printf("======VALOR:|%s| check:%u\n", nome_valor, check);
-				size_max_pack2 += (1 + 1);
+				size_max_pack2 += (1 + 1);  // tipo + valor do bit
+
 				i+=(pos+1);
 			}
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -4551,8 +4530,73 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 					goto deu_erro;
 				}
 				printf("======VALOR:|%s| check:%u\n", nome_valor, check);
-				size_max_pack2 += (1 + 1);
+				size_max_pack2 += (1 + 1);  // tipo + valor do bit
+
 				i+=(pos+1);
+			}
+			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+			else if(json_in[i+1] == '[')
+			{
+				// =================================   temos VALOR: lista (pode ser multiplos tipos... string, inteiro, flutuante, tudo misturado)
+				// qual tipo de dados dessa lista???
+				// caso seja multiplas matrizes de n dimensões... busca por "]," ou "]}"
+				// OBS: limite até [x][y] matriz dupla!!!!!!!! o GILSON
+				pos = pos_str_chr(&json_in[i+1], ']');  // vamos achar o primeiro fechada de lista... porem sabemos que tem varios tipos de lista e listas dentro de listas...
+				if(pos==-1)
+				{
+					// não achou o final da lista, temos problema!!!
+					erro = -4;
+					goto deu_erro;
+				}
+				cont_barra=0;
+				for(k=0; k<pos; k++)
+				{
+					// vamos verificar se é lista dentro de lista... pois dai vai ter [[ ou mais...
+					if(json_in[(i+1)+k] == '[')
+					{
+						cont_barra+=1;
+					}
+					else
+					{
+						// achou o primeiro diferente de '[' sai fora
+						break;
+					}
+				}
+				memset(nome_valor, 0x00, sizeof(nome_valor));
+				memset(nome_valor, ']', cont_barra);  // cria o provável formato que finaliza a lista, seja simples ']' ou ']]' ou mais...
+				// OBS: aqui não se aprofunda para saber que tipo de matriz é, caso seja maior que 2
+				pos = pos_str_str(&json_in[i+1], nome_valor);  // vamos achar final da lista
+				if(pos==-1)
+				{
+					// não achou o final da lista multipla respectiva do seu início, temos problema!!!
+					erro = -40;
+					goto deu_erro;
+				}
+				pos2=cont_barra;
+				// OBS: (pos+pos2) = final da lista na string geral do json
+				if(pos2==1)
+				{
+					// lista simples
+					cont = count_chr_str(&json_in[i+1], ',', (pos+pos2)) + 1;
+				}
+				else
+				{
+					// lista dupla ou maior
+					// OBS: nesse caso não é válido pois temos muitos tipos de matrizes e possibilidades, tem que analisar mais profundo
+					cont = count_str_str(&json_in[i+1], "],", (pos+pos2)) + 1;
+				}
+				size_max_pack_temp=0;
+				check = info_lista(&json_in[i+1], (pos+pos2), cont_barra, &size_max_pack_temp);  // aqui é locura d++++
+				printf("======VALOR LISTA (tipo:%u, %u itens? check:%i size_max_pack_temp:%u):|%.*s|\n", pos2, cont, check, size_max_pack_temp, (pos+pos2), &json_in[i+1]);
+				if(check!=0)
+				{
+					erro = -41;
+					goto deu_erro;
+				}
+				size_max_pack2 += (1 + size_max_pack_temp);
+
+				i+=(pos+pos2);  // ja desconta '[' e ']'
 			}
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -4562,6 +4606,12 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 				// ainda não é tratado...
 				erro = -8;
 				goto deu_erro;
+			}
+			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+			else if(json_in[i+1] == ' ' || json_in[i+1] == '\r' || json_in[i+1] == '\n' || json_in[i+1] == '\t')
+			{
+				// só vai....
 			}
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 			//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -4581,10 +4631,10 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 			if(init_nome_chave_ok==2)
 			{
 				init_nome_chave_ok = 0;  // fecho o pastel do valor da chave!
-			}
 
-			cont_chaves += 1;
-			printf("cont_chaves:%u, proxima chave...\n", cont_chaves);
+				cont_chaves += 1;
+				printf("cont_chaves:%u, proxima chave...\n\n", cont_chaves);
+			}
 		}
 
 		if(json_in[i]=='}')
@@ -4610,7 +4660,7 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 
 	deu_erro:
 
-	printf("FIMMMMMMMMMMMMM erro:%i, size: in:%u|gilson:%u|json:%u\n", erro, size_max_pack, size_max_pack2, size_json);
+	printf("FIMMMMMMMMMMMMM erro:%i, size: in:%u|gilson:%u|json:%u, init_obj:%i\n", erro, size_max_pack, size_max_pack2, size_json, init_obj);
 
 	return erro;
 }
