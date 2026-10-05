@@ -21,6 +21,9 @@
 #if (GIL_TYPE_DEVICE==1)
 
 // ... alguma lib específica...
+//#define printf_DEBUG	printf
+#define PRINT_DEBUG(...) 		printf(__VA_ARGS__)
+//#PRIi32 formalizar o debug!!!!
 
 #else
 
@@ -28,13 +31,10 @@
 
 #endif  // #if (GIL_TYPE_DEVICE==1)
 
-#define LEN_PACKS_GILSON	2  // 2 pacotes manipulaveis "ao mesmo tempo", se abriu o segundo tem que fechar para voltar para o primeiro!!!
-
-#define OFFSET_MODO_ZIP		2
-#define OFFSET_MODO_FULL	8
+#define LEN_PACKS_GILSON	2  // 2 pacotes manipuláveis "ao mesmo tempo", se abriu o segundo tem que fechar para voltar para o primeiro!!!
 
 #define TIPO_GIL_LDIN		0b11100000  // lista dinâmica de dados de diversos tipos, limitado até 255 tipos e não pode ter lista de lista
-#define TIPO_GIL_NULL		0b11111111  // quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
+#define TIPO_GIL_NULL		0b11111111  // sinaliza que é chave com valor nulo, somente no tipo FULL, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
 
 
 enum e_TIPO_OPER  // uso de 'tipo_operacao'
@@ -50,12 +50,12 @@ typedef struct {
 	uint32_t crc;
 	uint32_t crc_out;  // quando decodifica
 	int32_t erro;  // backup de erro geral de cada operacao...
-	uint16_t pos_bytes, pos_bytes2, size_max_pack;
-	uint16_t pos_tipo_dl_init, pos_tipo_dl_end, cont_tipo_dinamico, pos_bytes_dl;  // salva posicao do buffer de w/r onde inicia esse tipo_dinamico
+	uint16_t pos_bytes, pos_bytes2, size_pack, pos_bytes_oldt0, pos_bytes_oldt;
+	uint16_t pos_tipo_dl_init, pos_tipo_dl_close, cont_tipo_dinamico, pos_bytes_dl;  // salva posicao do buffer de w/r onde inicia esse tipo_dinamico
 	uint8_t modo;  // 0=padrao, 1=compacto
-	uint8_t ativo, tipo_operacao;
-	uint8_t cont_itens, cont_itens2, cont_itens_old;  // contagem e monitoramento das chaves
-	uint8_t chave_atual;  // para fins de comparar e validar chaves durante encode
+	uint8_t ativo, tipo_operacao, test_old;
+	uint8_t cont_itens, cont_itens2, cont_itens_old, cont_itens_oldt;  // contagem e monitoramento das chaves
+	uint8_t chave_atual, chave_atual_oldt;  // para fins de comparar e validar chaves durante encode
 	uint8_t tipo_dinamico, tam_list, nitens, tam_list2, nitens2, chave_dl;  // 0=não trata, 1=está tratando desse tipo
 	uint8_t chaves_null;  // até 255 chaves nulas, meio improvável...
 	uint8_t *bufw;  // buffer de escrita/leitura
@@ -71,6 +71,7 @@ static uint8_t ig=0;
 // Software CRC implementation with small lookup table
 static uint32_t gil_crc(uint32_t crc, const uint8_t *buffer, const uint16_t size)
 {
+	uint16_t i;
     static const uint32_t rtable[16] = {
         0x00000000, 0x1db71064, 0x3b6e20c8, 0x26d930ac,
         0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c,
@@ -80,7 +81,7 @@ static uint32_t gil_crc(uint32_t crc, const uint8_t *buffer, const uint16_t size
 
     const uint8_t *data = buffer;
 
-    for (size_t i = 0; i < size; i++)
+    for(i = 0; i < size; i++)
     {
         crc = (crc >> 4) ^ rtable[(crc ^ (data[i] >> 0)) & 0xf];
         crc = (crc >> 4) ^ rtable[(crc ^ (data[i] >> 4)) & 0xf];
@@ -90,13 +91,117 @@ static uint32_t gil_crc(uint32_t crc, const uint8_t *buffer, const uint16_t size
 }
 
 
+// uso geral, independe da estrutura 's_gil'
+int32_t gilson_valid_key(const uint8_t tipo1, const uint8_t tipo2, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
+{
+	int32_t erro=erGIL_OK;
+
+	if(tipo1>=GIL_MAX)
+	{
+		erro = erGIL_41;
+		goto deu_erro;
+	}
+
+	if(tipo2>=GIL_tMAX)
+	{
+		erro = erGIL_42;
+		goto deu_erro;
+	}
+
+	if(tipo1 == GIL_LIST)
+	{
+		if(cont_list_a == 0)
+		{
+			erro = erGIL_43;
+			goto deu_erro;
+		}
+
+
+		if(tipo2==GIL_tSTRING)
+		{
+			// aqui 'cont_list_b' é tratado como uint8
+			if(cont_list_b==0)
+			{
+				// precisamos do offset cru da lista de strings...
+				erro = erGIL_44;
+				goto deu_erro;
+			}
+		}
+	}
+	else if(tipo1 == GIL_MTX2D)
+	{
+		// aqui 'cont_list_b' é tratado como uint16
+		if(tipo2==GIL_tSTRING)
+		{
+			// não testado isso ainda, vai da ruim
+			erro = erGIL_45;
+			goto deu_erro;
+		}
+
+		if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
+		{
+			erro = erGIL_46;
+			goto deu_erro;
+		}
+		//vezes = cont_list_a * cont_list_b;  não utiliza...
+	}
+	else  // GIL_SINGLE
+	{
+		if(tipo2==GIL_tSTRING)
+		{
+			if(cont_list_a==0)
+			{
+				erro = erGIL_47;
+				goto deu_erro;
+			}
+		}
+	}
+
+	deu_erro:
+
+	return erro;
+}
+
+// uso geral, independe da estrutura 's_gil'
+int32_t gilson_valid_map(const uint16_t n_chaves, const uint16_t map[][6])
+{
+	int32_t erro=erGIL_OK;
+	uint8_t i;
+	/*
+	'map' deve ter 6 'uint16_t'
+	chave = map[0]
+	tipo1 = map[1]
+	tipo2 = map[2]
+	cont_list_a = map[3]
+	cont_list_b = map[4]
+	cont_list_step = map[5]
+	*/
+
+	if(n_chaves >= GIL_LIMIT_KEYS)
+	{
+		return erGIL_LIMKEY;
+	}
+
+	for(i=0; i<n_chaves; i++)
+	{
+		erro = gilson_valid_key(map[i][1], map[i][2], map[i][3], map[i][4], map[i][5]);
+		if(erro != erGIL_OK)
+		{
+			break;
+		}
+	}
+
+	return erro;
+}
+
+
 //========================================================================================================================
 //========================================================================================================================
 //========================================================================================================================
 //========================================================================================================================
 // PARTE DE CODIFICAÇÃO
 
-int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t size_max_pack)
+int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t size_pack)
 {
 	GIL_SIZE_RAM end_ram=0;
 	int32_t erro=erGIL_OK;
@@ -148,18 +253,18 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 	s_gil[ig].modo = modo_;
 	s_gil[ig].bufw = pack;
 	s_gil[ig].end_ram = (GIL_SIZE_RAM)pack;  // endereço na ram????
-	s_gil[ig].size_max_pack = size_max_pack;
+	s_gil[ig].size_pack = size_pack;
 	//memset(s_gil[ig].bufw, 0x00, sizeof(*s_gil[ig].bufw));
 
 	s_gil[ig].cont_itens=0;
 
 	if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
-		s_gil[ig].pos_bytes = OFFSET_MODO_ZIP;  // offset
+		s_gil[ig].pos_bytes = GIL_OFFSET_MODO_ZIP;  // offset
 	}
 	else
 	{
-		s_gil[ig].pos_bytes = OFFSET_MODO_FULL;  // offset
+		s_gil[ig].pos_bytes = GIL_OFFSET_MODO_FULL;  // offset
 	}
 
 	deu_erro:
@@ -167,11 +272,7 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 	s_gil[ig].erro = erro;
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-		printf_DEBUG("DEBUG gilson_encode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
-#else  // PC
-		printf("DEBUG gilson_encode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, end_ram:%u|%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_encode_init::: ig:%"PRIu8", erro:%"PRIi32", modo:%"PRIu8", pos_bytes:%"PRIu16", cont_itens:%"PRIu8", end_ram:%"PRIxRAM"|%"PRIxRAM"\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].end_ram, end_ram);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 	s_gil[ig].ativo = 1;  // ativa a estrutura 'ig' da vez!!!
@@ -179,7 +280,7 @@ int32_t gilson_encode_init(const uint8_t modo_, uint8_t *pack, const uint16_t si
 }
 
 // calcula e retorna crc independente do 'modo'
-static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
+static int32_t gilson_encode_close_base(const uint8_t flag_crc, uint32_t *crc, uint32_t *pos_bytes)
 {
 	int32_t erro=erGIL_OK;
 	s_gil[ig].crc=0;
@@ -203,10 +304,13 @@ static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
 		{
 			s_gil[ig].erro = erGIL_OPER;
 		}
+		else
+		{
+			s_gil[ig].pos_bytes = 0;  // pra garantir que não deu nada...
+			s_gil[ig].modo = 255;  // deu ruim!!!
+			s_gil[ig].bufw[0] = s_gil[ig].modo;
+		}
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
-		s_gil[ig].pos_bytes = 0;  // pra garantir que não deu nada...
-		s_gil[ig].modo = 255;  // deu ruim!!!
-		s_gil[ig].bufw[0] = s_gil[ig].modo;
 	}
 	else
 	{
@@ -233,11 +337,7 @@ static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
 
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_encode_end_crc::: erro:%i, ig:%u, modo:%u, pos_bytes:%u, cont_itens:%u, crc:%u, chaves_null:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].chaves_null, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
-#else  // PC
-	printf("DEBUG gilson_encode_end_crc::: erro:%i, ig:%u, modo:%u, pos_bytes:%u, cont_itens:%u, crc:%u, chaves_null:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].chaves_null, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_encode_close_crc::: erro:%"PRIi32", ig:%"PRIu8", modo:%"PRIu8", pos_bytes:%"PRIu16", cont_itens:%"PRIu16", crc:%"PRIu32", chaves_null:%"PRIu8", cru:[%u,%u,%u,%u,%u,%u,%u,%u]\n", s_gil[ig].erro, ig, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].crc, s_gil[ig].chaves_null, s_gil[ig].bufw[0], s_gil[ig].bufw[1], s_gil[ig].bufw[2], s_gil[ig].bufw[3], s_gil[ig].bufw[4], s_gil[ig].bufw[5], s_gil[ig].bufw[6], s_gil[ig].bufw[7]);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 	// por mais que deu algum erro ou está em erro, vamos limpar a estrutura e sair fora...
@@ -245,7 +345,9 @@ static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	s_gil[ig].tipo_operacao = e_OPER_NULL;
 
 	*crc = s_gil[ig].crc;
-
+	*pos_bytes = s_gil[ig].pos_bytes;
+	erro = s_gil[ig].erro;
+	/*
 	if(ig==1)
 	{
 		ig = 0;  // volta para o primeiro, pois está aberto!!!
@@ -255,21 +357,37 @@ static int32_t gilson_encode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	{
 		return s_gil[ig].pos_bytes;
 	}
+	*/
+	if(ig==1)
+	{
+		ig = 0;  // volta para o primeiro, pois está aberto!!!
+	}
+	return erro;
 }
 
 
-int32_t gilson_encode_end(void)
+int32_t gilson_encode_close(void)
+{
+	uint32_t crc=0, pos_bytes=0;  // não usa...
+	return gilson_encode_close_base(0, &crc, &pos_bytes);
+}
+
+int32_t gilson_encode_close_crc(uint32_t *crc)
+{
+	uint32_t pos_bytes=0;  // não usa...
+	return gilson_encode_close_base(1, crc, &pos_bytes);
+}
+
+int32_t gilson_encode_close_len(uint32_t *pos_bytes)
 {
 	uint32_t crc=0;  // não usa...
-	return gilson_encode_end_base(0, &crc);
+	return gilson_encode_close_base(0, &crc, pos_bytes);
 }
 
-
-int32_t gilson_encode_end_crc(uint32_t *crc)
+int32_t gilson_encode_close_crc_len(uint32_t *crc, uint32_t *pos_bytes)
 {
-	return gilson_encode_end_base(1, crc);
+	return gilson_encode_close_base(1, crc, pos_bytes);
 }
-
 
 
 // colocar sempre o "(uint8_t *)" na frente da variavel de entrada 'multi_data' e passar como "&"
@@ -650,20 +768,20 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 		}
 		*/
 	}
-	else
+	else  // (tipo_mux == TIPO_GIL_NULL)  so grava o 'tipo_mux' e cai fora...
 	{
 		if(flag_teste==1)  // ou em 0 ou em 1, mas não nos 2 pois vai duplicar
 		{
 			s_gil[ig].chaves_null+=1;
 		}
 	}
-	// else (tipo_mux == TIPO_GIL_NULL)  so grava o 'tipo_mux' e cai fora...
+
 
 	deu_erro:
 
 	if(flag_teste)
 	{
-		if(erro!=erGIL_OK || (pos_bytes_check > s_gil[ig].size_max_pack))
+		if(erro!=erGIL_OK || (pos_bytes_check > s_gil[ig].size_pack))
 		{
 			// deu erro antes de saber ou vai explodir o buffer de entrada!!!
 			if(erro==erGIL_OK)
@@ -697,13 +815,9 @@ static int32_t gilson_encode_data_base(const uint8_t chave, const char *nome_cha
 
 
 #if (GIL_DEBUG_LIB==1)
-	if(erro!=erGIL_OK)
+	if(erro!=erGIL_OK || GIL_PRINT_DEBUG==1)
 	{
-#if (GIL_TYPE_DEVICE==0)
-		printf_DEBUG("DEBUG gilson_encode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, flag_teste:%u, tipo_dinamico:%u, pos_bytes_check:%u|%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, flag_teste, s_gil[ig].tipo_dinamico, pos_bytes_check, s_gil[ig].size_max_pack, s_gil[ig].chaves_null);
-#else  // PC
-		printf("DEBUG gilson_encode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, flag_teste:%u, tipo_dinamico:%u, pos_bytes_check:%u|%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, flag_teste, s_gil[ig].tipo_dinamico, pos_bytes_check, s_gil[ig].size_max_pack, s_gil[ig].chaves_null);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+		PRINT_DEBUG("DEBUG gilson_encode_data::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", chave:%"PRIu8", tipo1:%"PRIu8", tipo2:%"PRIu8", cont_list_a:%"PRIu16", cont_list_b:%"PRIu16", cont_list_step:%"PRIu16", flag_teste:%"PRIu8", tipo_dinamico:%"PRIu8", pos_bytes_check:%"PRIu16"|%"PRIu16", chaves_null:%"PRIu8"\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, flag_teste, s_gil[ig].tipo_dinamico, pos_bytes_check, s_gil[ig].size_pack, s_gil[ig].chaves_null);
 	}
 #endif  // #if (GIL_DEBUG_LIB==1)
 
@@ -718,7 +832,7 @@ int32_t gilson_encode_data(const uint8_t chave, const uint8_t tipo1, const uint8
 	return gilson_encode_data_base(chave, "x", tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step);
 }
 
-int32_t gilson_encode_dataKV(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, char *nome_chave, const uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
+int32_t gilson_encode_dataKV(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, const char *nome_chave, const uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
 	return gilson_encode_data_base(chave, nome_chave, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step);
 }
@@ -977,11 +1091,7 @@ int32_t gilson_encode_dl_init(const uint8_t chave, const uint8_t tam_list, const
 
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_encode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, tam_list, nitens);
-#else  // PC
-	printf("DEBUG gilson_encode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, tam_list, nitens);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_encode_dl_init::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", chave:%"PRIu8", tam_list:%"PRIu8", nitens:%"PRIu8"\n", ig, erro, s_gil[ig].modo, chave, tam_list, nitens);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 	return erro;
@@ -1004,84 +1114,30 @@ static int32_t valid_gilson_encode_dl(const uint8_t item, const uint8_t tipo1, c
 		goto deu_erro;
 	}
 
-	if(s_gil[ig].tipo_dinamico == 0)
-	{
-		erro = erGIL_40;
-		goto deu_erro;
-	}
-
 	if(s_gil[ig].tipo_operacao!=e_OPER_ENCODE)
 	{
 		erro = erGIL_OPER;
 		goto deu_erro;
 	}
 
-	if(tipo1>=GIL_MAX)
+	if(s_gil[ig].tipo_dinamico == 0)
 	{
-		erro = erGIL_41;
-		goto deu_erro;
-	}
-
-	if(tipo2>=GIL_tMAX)
-	{
-		erro = erGIL_41b;
+		erro = erGIL_40;
 		goto deu_erro;
 	}
 
 	if(item > s_gil[ig].nitens)
 	{
 		// quer add uma item maior do que a contagem crescente... não tem como
-		erro = erGIL_42;
+		erro = erGIL_40b;
 		goto deu_erro;
 	}
 
-	if(tipo1 == GIL_LIST)
+	// por fim...
+	erro = gilson_valid_key(tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
+	if(s_gil[ig].erro != erGIL_OK)
 	{
-		if(cont_list_a == 0)
-		{
-			erro = erGIL_43;
-			goto deu_erro;
-		}
-
-
-		if(tipo2==GIL_tSTRING)
-		{
-			// aqui 'cont_list_b' é tratado como uint8
-			if(cont_list_b==0)
-			{
-				// precisamos do offset cru da lista de strings...
-				erro = erGIL_44;
-				goto deu_erro;
-			}
-		}
-	}
-	else if(tipo1 == GIL_MTX2D)
-	{
-		// aqui 'cont_list_b' é tratado como uint16
-		if(tipo2==GIL_tSTRING)
-		{
-			// não testado isso ainda, vai da ruim
-			erro = erGIL_45;
-			goto deu_erro;
-		}
-
-		if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
-		{
-			erro = erGIL_46;
-			goto deu_erro;
-		}
-		//vezes = cont_list_a * cont_list_b;  não utiliza...
-	}
-	else  // GIL_SINGLE
-	{
-		if(tipo2==GIL_tSTRING)
-		{
-			if(cont_list_a==0)
-			{
-				erro = erGIL_47;
-				goto deu_erro;
-			}
-		}
+		s_gil[ig].erro = erro;  // vamos manter sempre o mesmo erro!!!
 	}
 
 	deu_erro:
@@ -1090,12 +1146,18 @@ static int32_t valid_gilson_encode_dl(const uint8_t item, const uint8_t tipo1, c
 }
 
 
-int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
+int32_t gilson_encode_dl_add_item(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
 	int32_t erro=erGIL_OK;
 	uint16_t vezes = 1;
 	uint8_t tipo_mux=0, len_string_max=0;
 
+
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		goto deu_erro;
+	}
 
 	erro = valid_gilson_encode_dl(item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 	if(erro != erGIL_OK)
@@ -1169,25 +1231,27 @@ int32_t gilson_encode_dl_add(const uint8_t item, const uint8_t tipo1, const uint
 	if(erro!=erGIL_OK)
 	{
 		s_gil[ig].erro = erro;
+	}
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-		printf_DEBUG("DEBUG gilson_encode_dl_add::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#else  // PC
-		printf("DEBUG gilson_encode_dl_add::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_encode_dl_add_item::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", item:%"PRIu8", tipo1:%"PRIu8", tipo2:%"PRIu8", cont_list_a:%"PRIu16", cont_list_b:%"PRIu16", cont_list_step:%"PRIu16"\n", ig, erro, s_gil[ig].modo, item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 #endif  // #if (GIL_DEBUG_LIB==1)
-
-	}
 
 	return erro;
 }
 
 // const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step
-int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
+int32_t gilson_encode_dl_add_data(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
 	int32_t erro=erGIL_OK;
 
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		goto deu_erro;
+	}
+
+	// na próxima, não precisa pedir o mapa novamente, somente 'item' e 'valor'
 	erro = valid_gilson_encode_dl(item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 	if(erro != erGIL_OK)
 	{
@@ -1195,7 +1259,7 @@ int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uin
 	}
 
 	// os 2 primeiro: 'chave', 'nome_chave' não usamos aquiii vai ser ignorados devido 's_gil[ig].tipo_dinamico'
-	erro = gilson_encode_data_base(0, "x", tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step);
+	erro = gilson_encode_data_base(s_gil[ig].chave_dl, "x", tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step);
 
 	deu_erro:
 
@@ -1206,27 +1270,24 @@ int32_t gilson_encode_dl_data(const uint8_t item, const uint8_t tipo1, const uin
 	else
 	{
 		s_gil[ig].erro = erro;
+	}
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-		printf_DEBUG("DEBUG gilson_encode_dl_data::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#else  // PC
-		printf("DEBUG gilson_encode_dl_data::: ig:%u, ERRO:%i, modo:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_encode_dl_data::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", item:%"PRIu8", tipo1:%"PRIu8", tipo2:%"PRIu8", cont_list_a:%"PRIu16", cont_list_b:%"PRIu16", cont_list_step:%"PRIu16"\n", ig, erro, s_gil[ig].modo, item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 #endif  // #if (GIL_DEBUG_LIB==1)
-
-	}
 
 	return erro;
 }
 
-int32_t gilson_encode_dl_end(void)
+int32_t gilson_encode_dl_close(void)
 {
 	int32_t erro=erGIL_OK;
 
-
-	// se não bateu o numero de 'tam_list' e/ou 'nitens' da pra gerar um erro...
-	if(s_gil[ig].tipo_dinamico == 0)
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+	}
+	else if(s_gil[ig].tipo_dinamico == 0)
 	{
 		erro = erGIL_48;
 	}
@@ -1239,14 +1300,10 @@ int32_t gilson_encode_dl_end(void)
 		// total de itens geral não bate a conta com o programado
 		erro = erGIL_49;
 	}
-
+	// se não bateu o numero de 'tam_list' e/ou 'nitens' da pra gerar um erro...
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_encode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
-#else  // PC
-	printf("DEBUG gilson_encode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_encode_dl_close::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", tam_list:%"PRIu8", nitens:%"PRIu8", tipo_dinamico:%"PRIu16"\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 	s_gil[ig].tipo_dinamico = 0;  // finalizando o tratar um tipo dinamico
@@ -1265,6 +1322,13 @@ int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t ti
 	uint8_t *valor;
 	char *nome_chave = {"\0"};
 	va_list argptr;
+
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		//erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		//goto deu_erro;
+		return s_gil[ig].erro;
+	}
 
 	va_start(argptr, tipo2);
 
@@ -1316,9 +1380,9 @@ int32_t gilson_encode(const uint8_t chave, const uint8_t tipo1, const uint8_t ti
 // entra com 'mapa' fixo do dados que serão encodados
 // em '...' teremos 'nome_chave' caso seja KV e/ou 'valor' que é a data específica
 // perigo de explodir o sistema, caso passe parâmetros errados ou esqueça de passar algum
-int32_t gilson_encode_mapfix(const uint16_t *map, ...)
+int32_t gilson_encode_mapfix(const uint16_t map[6], ...)
 {
-	uint16_t cont_list_a=0, cont_list_b=0, cont_list_step=0;
+	//uint16_t cont_list_a=0, cont_list_b=0, cont_list_step=0;
 	uint8_t *valor;
 	//uint8_t chave=0, tipo1=255, tipo2=255;
 	char *nome_chave = {"\0"};
@@ -1334,6 +1398,13 @@ int32_t gilson_encode_mapfix(const uint16_t *map, ...)
 	cont_list_step = map[5] (se for o caso...)
 	*/
 
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		//erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		//goto deu_erro;
+		return s_gil[ig].erro;
+	}
+
 	va_start(argptr, map);
 
 	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
@@ -1343,7 +1414,7 @@ int32_t gilson_encode_mapfix(const uint16_t *map, ...)
 	}
 
 	valor = va_arg(argptr, uint8_t *);
-
+	/*
 	if(map[1] == GIL_SINGLE)
 	{
 		if(map[2] == GIL_tSTRING)
@@ -1369,6 +1440,7 @@ int32_t gilson_encode_mapfix(const uint16_t *map, ...)
 	{
 		// erro
 	}
+	*/
 
 	//printf("valor:%u\n", &valor);
 
@@ -1377,16 +1449,19 @@ int32_t gilson_encode_mapfix(const uint16_t *map, ...)
 	va_end(argptr);
 
 
-	return gilson_encode_data_base(map[0], nome_chave, map[1], map[2], valor, cont_list_a, cont_list_b, cont_list_step);
+	//return gilson_encode_data_base(map[0], nome_chave, map[1], map[2], valor, cont_list_a, cont_list_b, cont_list_step);
+	return gilson_encode_data_base(map[0], nome_chave, map[1], map[2], valor, map[3], map[4], map[5]);
 }
 
 
 // entra com 'mapa' dinâmico dos dados que serão encodados
 // em '...' teremos 'nome_chave' caso seja KV e/ou 'valor' que é a data específica, seguido de até 3 valores
 // perigo de explodir o sistema, caso passe parâmetros errados ou esqueça de passar algum
-int32_t gilson_encode_mapdin(const uint16_t *map, ...)
+int32_t gilson_encode_mapdin(const uint16_t map[6], ...)
 {
+	int32_t erro=erGIL_OK;
 	uint16_t cont_list_a=0, cont_list_b=0, cont_list_step=0;
+	//uint8_t modofull = 1;
 	uint8_t *valor;
 	char *nome_chave = {"\0"};
 	va_list argptr;
@@ -1398,6 +1473,13 @@ int32_t gilson_encode_mapdin(const uint16_t *map, ...)
 	tipo2 = map[2] (obrigatório)
 	*/
 
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		//erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		//goto deu_erro;
+		return s_gil[ig].erro;
+	}
+
 	va_start(argptr, map);
 
 	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
@@ -1405,6 +1487,13 @@ int32_t gilson_encode_mapdin(const uint16_t *map, ...)
 		nome_chave = va_arg(argptr, char *);
 		//erro = valida_nome_chave(nome_chave);
 	}
+
+	/*
+	if(s_gil[ig].modo != GIL_MODO_FULL && s_gil[ig].modo != GIL_MODO_KV)
+	{
+		modofull = 0;
+	}
+	*/
 
 	valor = va_arg(argptr, uint8_t *);
 
@@ -1440,6 +1529,24 @@ int32_t gilson_encode_mapdin(const uint16_t *map, ...)
 
 	va_end(argptr);
 
+	/*
+	if(modofull==1)  // if(modofull==1 && GIL_VALID_MAP_KEY==1)
+	{
+		if((map[1]!=GIL_SINGLE && cont_list_a > map[3]) || cont_list_b > map[4] || cont_list_step > map[5])
+		{
+			// ja verifica aqui se o mapa está de acordo com o decodificado no dinâmico 'argptr'
+			erro=erGIL_66;
+			return erro;
+		}
+	}
+	*/
+	if((map[1]!=GIL_SINGLE && cont_list_a > map[3]) || cont_list_b > map[4] || cont_list_step > map[5])
+	{
+		// ja verifica aqui se o mapa está de acordo com o decodificado no dinâmico 'argptr'
+		erro=erGIL_66;
+		s_gil[ig].erro = erro;
+		return erro;
+	}
 
 	return gilson_encode_data_base(map[0], nome_chave, map[1], map[2], valor, cont_list_a, cont_list_b, cont_list_step);
 }
@@ -1453,6 +1560,14 @@ int32_t gilson_encode_data_null(const uint8_t chave, ...)
     char *nome_chave = {"\0"};
     uint8_t dummy=0;
     va_list argptr;
+
+
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		//erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		//goto deu_erro;
+		return s_gil[ig].erro;
+	}
 
     /*
 	if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
@@ -1473,6 +1588,8 @@ int32_t gilson_encode_data_null(const uint8_t chave, ...)
     }
 
 	va_end(argptr);
+
+	// tipo1 e tipo2 = 255, vai resultar no 'TIPO_GIL_NULL'
 
     return gilson_encode_data_base(chave, nome_chave, 255, 255, &dummy, 0, 0, 0);
 }
@@ -1551,7 +1668,7 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 	{
 		s_gil[ig].cont_itens2 = s_gil[ig].bufr[1];
 
-		s_gil[ig].pos_bytes = OFFSET_MODO_ZIP;  // offset geral
+		s_gil[ig].pos_bytes = GIL_OFFSET_MODO_ZIP;  // offset geral
 	}
 	else
 	{
@@ -1570,7 +1687,7 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 
 		s_gil[ig].crc_out = crc1;  // atualiza o global
 
-		s_gil[ig].pos_bytes = OFFSET_MODO_FULL;  // offset geral
+		s_gil[ig].pos_bytes = GIL_OFFSET_MODO_FULL;  // offset geral
 	}
 
 	deu_erro:
@@ -1589,11 +1706,7 @@ int32_t gilson_decode_init(const uint8_t *pack, uint8_t *modo)
 
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_decode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u], crc:%u==%u, pos_bytes2:%u, cont_itens2:%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
-#else  // PC
-	printf("DEBUG gilson_decode_init::: ig:%u, erro:%i, end_ram:%X, modo:%u, pos_bytes:%u, cont_itens:%u, cru:[%u,%u,%u,%u,%u,%u,%u,%u], crc:%u==%u, pos_bytes2:%u, cont_itens2:%u\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_decode_init::: ig:%"PRIu8", erro:%"PRIi32", end_ram:%"PRIxRAM", modo:%"PRIu8", pos_bytes:%"PRIu16", cont_itens:%"PRIu8", cru:[%u,%u,%u,%u,%u,%u,%u,%u], crc:%"PRIu32"==%"PRIu32", pos_bytes2:%"PRIu16", cont_itens2:%"PRIu8"\n", ig, erro, s_gil[ig].end_ram, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].bufr[0], s_gil[ig].bufr[1], s_gil[ig].bufr[2], s_gil[ig].bufr[3], s_gil[ig].bufr[4], s_gil[ig].bufr[5], s_gil[ig].bufr[6], s_gil[ig].bufr[7], crc1, crc2, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens2);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 
@@ -1613,7 +1726,7 @@ int32_t gilson_decode_valid(const uint8_t *pack)
 }
 
 
-static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
+static int32_t gilson_decode_close_base(const uint8_t flag_crc, uint32_t *crc, uint32_t *pos_bytes)
 {
 	int32_t erro=erGIL_OK;
 
@@ -1622,6 +1735,20 @@ static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
 		goto deu_erro;
 	}
+
+	if(s_gil[ig].tipo_operacao != e_OPER_DECODE)
+	{
+		s_gil[ig].erro = erGIL_OPER;
+		goto deu_erro;
+	}
+
+	if(s_gil[ig].test_old==1)
+	{
+		// indica que a última leitura de chave do pacote foi no modo teste e queremos finalizar agora
+		// então temos que andar no offset com base na última chave...
+		s_gil[ig].pos_bytes = s_gil[ig].pos_bytes_oldt;
+	}
+
 
 	if(s_gil[ig].modo == GIL_MODO_ZIP || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
@@ -1654,22 +1781,25 @@ static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 	//s_gil[ig].tipo_operacao = e_OPER_NULL;
 
 	*crc = s_gil[ig].crc_out;
+	*pos_bytes = s_gil[ig].pos_bytes;
 
 	deu_erro:
 
 	s_gil[ig].ativo = 0;
 	s_gil[ig].tipo_operacao = e_OPER_NULL;
 
+	s_gil[ig].test_old = 0;
+	s_gil[ig].cont_itens_oldt = 0;
+	s_gil[ig].chave_atual_oldt = 0;
+	s_gil[ig].pos_bytes_oldt0 = 0;
+	s_gil[ig].pos_bytes_oldt = 0;
+
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out, s_gil[ig].chaves_null);
-#else  // PC
-	printf("DEBUG gilson_decode_end_crc::: ig:%u, erro:%i, modo:%u, pos_bytes:%u==%u, cont_itens:%u==%u, crc:%u, chaves_null:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out, s_gil[ig].chaves_null);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_decode_close_base::: ig:%"PRIu8", flag_crc:%"PRIu8", erro:%"PRIi32", modo:%"PRIu8", pos_bytes:%"PRIu16"==%"PRIu16", cont_itens:%"PRIu8"==%"PRIu8", crc:%"PRIu32", chaves_null:%"PRIu8"\n", ig, flag_crc, erro, s_gil[ig].modo, s_gil[ig].pos_bytes, s_gil[ig].pos_bytes2, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].crc_out, s_gil[ig].chaves_null);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 
-
+	/*
 	if(erro==erGIL_OK)
 	{
 		if(ig==1)
@@ -1695,18 +1825,361 @@ static int32_t gilson_decode_end_base(const uint8_t flag_crc, uint32_t *crc)
 
 		return erro;
 	}
+	*/
+	// estamos para encerrar o pacote mas ficou com erro que pode ser de agora ou herdado...
+	// mas como vamos finalizar e não queremos travar a estrutura GILSON vamos zerar o erro da estrutura
+	s_gil[ig].erro = erGIL_OK;  // erro
+	if(ig==1)
+	{
+		ig = 0;  // volta para o primeiro, pois está aberto!!!
+	}
+
+	return erro;
 }
 
 
-int32_t gilson_decode_end(void)
+int32_t gilson_decode_close(void)
 {
-	uint32_t crc=0;
-	return gilson_decode_end_base(0, &crc);
+	uint32_t crc=0, pos_bytes=0;  // não usa...
+	return gilson_decode_close_base(0, &crc, &pos_bytes);
 }
 
-int32_t gilson_decode_end_crc(uint32_t *crc)
+int32_t gilson_decode_close_crc(uint32_t *crc)
 {
-	return gilson_decode_end_base(1, crc);
+	uint32_t pos_bytes=0;  // não usa...
+	return gilson_decode_close_base(1, crc, &pos_bytes);
+}
+
+int32_t gilson_decode_close_len(uint32_t *pos_bytes)
+{
+	uint32_t crc=0;  // não usa...
+	return gilson_decode_close_base(0, &crc, pos_bytes);
+}
+
+int32_t gilson_decode_close_crc_len(uint32_t *crc, uint32_t *pos_bytes)
+{
+	return gilson_decode_close_base(1, crc, pos_bytes);
+}
+
+
+
+
+
+
+// baseado no loop de 'gilson_decode_data_full_base()'
+// quando achar a chave que queremos, deixa pronto para ser lida
+static int32_t gilson_busca_chave_full(const uint8_t chave, const uint8_t test_valor)
+{
+	int32_t erro=erGIL_OK;
+	uint16_t i, vezes = 1, cont_list_a=0, cont_list_b=0, cont_list_step=0, nbytes=1, temp16, pos_bytes, len, pos_bytes_bk=0;
+	uint8_t tipo_mux=0, tipo1=255, tipo2=255, bypass=0, cont_itens_prot=0, flag_mesmo=0;
+
+	if(chave == s_gil[ig].chave_atual)
+	{
+		// quer ler a mesma chave porem ja deu os offsets..
+		//s_gil[ig].chave_atual += 1;  // vou forçar ser maior para reiniciar a busca
+		//printf("mesma atual chave:%u, cont_itens:%u, test_valor:%u\n", chave, s_gil[ig].cont_itens, test_valor);
+		//s_gil[ig].cont_itens -= 1;
+		flag_mesmo = 1;
+	}
+
+	while(1)
+	{
+		if(chave > s_gil[ig].cont_itens)
+		{
+			// quer ler uma chave maior do que a contagem crescente... temos que ir para frente...
+			// vai iniciar de onde parou até achar o que queremos
+			bypass=1;
+			//printf("aaaaaaaaaaaaaaaaaaa1, chave:%u, chave_atual:%u, cont_itens:%u, test_valor:%u\n", chave, s_gil[ig].chave_atual, s_gil[ig].cont_itens, test_valor);
+		}
+		else if(chave < s_gil[ig].chave_atual || flag_mesmo==1)
+		{
+			flag_mesmo = 0;
+			// quer ler uma chave menor, que ja foi lida e/u passada... temos que ir para trás
+			// vai partir de zero e vai até achar o que queremos
+			//printf("aaaaaaaaaaaaaaaaaaa0, chave:%u, chave_atual:%u, cont_itens:%u, test_valor:%u\n", chave, s_gil[ig].chave_atual, s_gil[ig].cont_itens, test_valor);
+			bypass=1;
+			s_gil[ig].cont_itens = 0;
+			s_gil[ig].pos_bytes = GIL_OFFSET_MODO_FULL;
+		}
+		else
+		{
+			bypass=0;  // é a que estamos, está na sequencia crescente correta
+			s_gil[ig].chave_atual = chave;  // salva a última feita ok
+			s_gil[ig].cont_itens_old = s_gil[ig].cont_itens;
+		}
+
+		// todo: to com dúvidas nesse modo 's_gil[ig].tipo_dinamico==1' que não me lembro mais, mas que barbaridade tche
+
+		// nesse caso, quando encontrar a chave que queremos, cai fora pois será lida em outra função
+		if(bypass == 0)
+		{
+			//printf("aaaaaaaaaaaaaaaaaaa2, chave:%u, chave_atual:%u, cont_itens:%u, test_valor:%u\n", chave, s_gil[ig].chave_atual, s_gil[ig].cont_itens, test_valor);
+			break;
+		}
+
+		cont_itens_prot+=1;
+		if(cont_itens_prot > s_gil[ig].cont_itens2)
+		{
+			// ja percorreu todas chaves e não achou nada
+			// por segurança vamos cair fora...
+			erro = erGIL_65;
+			goto deu_erro;
+		}
+
+		if(s_gil[ig].tipo_dinamico == 0)
+		{
+			if(s_gil[ig].modo == GIL_MODO_KV)
+			{
+				// nome da chave
+				len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
+				s_gil[ig].pos_bytes += 1;
+				//memcpy(nome_chave, &s_gil[ig].bufr[s_gil[ig].pos_bytes], len);
+				s_gil[ig].pos_bytes += len;
+
+				// len vai ser menor que 'LEN_MAX_CHAVE_NOME' caracteres...
+			}
+
+			// não estamos no modo dinamico lista
+			pos_bytes = s_gil[ig].pos_bytes;
+		}
+		else
+		{
+			// estamos no modo dinamico lista
+			pos_bytes = s_gil[ig].pos_bytes_dl;  // onde se encontra a parte do header e está no ponto onde depende do 'item' que foi setado em 'gilson_decode_dl()'
+			// e lembrando que 's_gil[ig].pos_bytes' está ja em ponto da 'data' de fato!!! e na sequencia continua dos 'itens' chamados em ordem!!!!
+			// OBS: até entao ele ja validou o header mas aqui abaixo vai fazer tudo novamente... mas vamos melhorar isso no futuro...
+		}
+
+
+		tipo_mux = s_gil[ig].bufr[pos_bytes];
+		pos_bytes += 1;
+		pos_bytes_bk = pos_bytes;
+
+
+		if(tipo_mux!=TIPO_GIL_NULL)
+		{
+			// 0baaabbbbb = a:tipo1, b=tipo2
+			//tipo_mux = tipo1<<5;
+			//tipo_mux |= tipo2;
+			tipo1 = tipo_mux>>5;
+			tipo2 = tipo_mux&0b11111;
+			//printf("decode: 0baaabbbbb = a:tipo1(%u), b=tipo2()%u tipo_mux:%u\n", tipo1, tipo2, tipo_mux);
+
+			// como eu vou estar analisando um pacote FULL, as validações estão corretas e tambem via crc
+			/*
+			if(tipo1>=GIL_MAX)
+			{
+				erro = erGIL_31;
+				goto deu_erro;
+			}
+			if(tipo2>=GIL_tMAX)
+			{
+				erro = erGIL_31b;
+				goto deu_erro;
+			}
+			*/
+
+			if(tipo1 == GIL_LIST)
+			{
+				memcpy(&vezes, &s_gil[ig].bufr[pos_bytes], 2);
+				pos_bytes += 2;
+
+				/*
+				if(vezes == 0)
+				{
+					erro = erGIL_32;
+					goto deu_erro;
+				}
+				*/
+
+				if(tipo2 == GIL_tSTRING)
+				{
+					cont_list_b = s_gil[ig].bufr[pos_bytes];
+					pos_bytes += 1;
+					/*
+					if(cont_list_b==0)
+					{
+						// precisamos do offset cru da lista de strings...
+						erro = erGIL_33;
+						goto deu_erro;
+					}
+					*/
+				}
+			}
+			else if(tipo1 == GIL_MTX2D)
+			{
+				cont_list_a = s_gil[ig].bufr[pos_bytes];
+				pos_bytes += 1;
+				memcpy(&cont_list_b, &s_gil[ig].bufr[pos_bytes], 2);
+				pos_bytes += 2;
+				memcpy(&cont_list_step, &s_gil[ig].bufr[pos_bytes], 2);
+				pos_bytes += 2;
+
+				//vezes = cont_list_a * cont_list_b;
+				/*
+				if(cont_list_a == 0 || cont_list_b == 0 || cont_list_step == 0)
+				{
+					erro = erGIL_34;
+					goto deu_erro;
+				}
+				*/
+			}
+			else  // GIL_SINGLE
+			{
+				// ja alocou 'tipo2'...
+				vezes = 1;
+
+				/*
+				if(tipo2==GIL_tSTRING)
+				{
+					if(cont_list_a==0)  // por mais que não vá utilizar... para 1 string somente
+					{
+						erro = -9;
+						goto deu_erro;
+					}
+				}
+				*/
+				// 'cont_list_a' só precisa na codificacao, agora é com base no 'len' da vez
+			}
+
+
+			// terminada os decodes de tipos...
+			if(s_gil[ig].tipo_dinamico == 0)
+			{
+				s_gil[ig].pos_bytes = pos_bytes;  // segue o baile de onde estava...
+			}
+			else
+			{
+				s_gil[ig].pos_bytes_dl = pos_bytes;  // para a próxima vez...
+				// lembrando que 's_gil[ig].pos_bytes' ja está na posição correta da sequência
+			}
+
+
+
+			switch(tipo2)
+			{
+			case GIL_tBIT:
+				// nada ainda...
+				break;
+			case GIL_tINT8:
+			case GIL_tUINT8:
+				nbytes=1;
+				break;
+			case GIL_tINT16:
+			case GIL_tUINT16:
+				nbytes=2;
+				break;
+			case GIL_tINT32:
+			case GIL_tUINT32:
+				nbytes=4;
+				break;
+			case GIL_tINT64:
+			case GIL_tUINT64:
+				nbytes=8;
+				break;
+			case GIL_tFLOAT32:
+				nbytes=4;
+				break;
+			case GIL_tFLOAT64:
+				nbytes=8;
+				break;
+			case GIL_tSTRING:
+				// só vai...
+				break;
+			default:
+				erro = erGIL_35;
+				goto deu_erro;
+			}
+
+
+			if(tipo2 == GIL_tSTRING)
+			{
+				for(i=0; i<vezes; i++)
+				{
+					len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
+					s_gil[ig].pos_bytes += 1;
+					if(bypass == 0)
+					{
+						//memcpy(valor+(i*cont_list_b), &s_gil[ig].bufr[s_gil[ig].pos_bytes], len);
+					}
+					s_gil[ig].pos_bytes += len;
+				}
+			}
+			else if(tipo2 == GIL_tBIT)
+			{
+				// nada ainda...
+			}
+			else
+			{
+				// para o resto é só varer bytes
+				if(tipo1 == GIL_MTX2D)
+				{
+					// vamos ao exemplo:
+					// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
+					// 10*250=2500 elementos serializados e como é float *4 = 10000 bytes, mas a serializacao vai ir [0][0], [0][1]...[0][249], [1][0] ... [9][249]
+					// logo se eu quero x[2][3] tenho que dar os offset com base nos valores máximos (250 elementos cada linha)
+					for(i=0; i<cont_list_a; i++)
+					{
+						temp16 = i*cont_list_step*nbytes;  // passos em cada linha da matriz
+						if(bypass == 0)
+						{
+							//memcpy(valor+temp16, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*cont_list_b);
+						}
+						s_gil[ig].pos_bytes += nbytes*cont_list_b;
+					}
+				}
+				else
+				{
+					if(bypass == 0)
+					{
+						//memcpy(valor, &s_gil[ig].bufr[s_gil[ig].pos_bytes], nbytes*vezes);
+					}
+					s_gil[ig].pos_bytes += nbytes*vezes;
+				}
+			}
+		}
+		else  // (tipo_mux == TIPO_GIL_NULL) temos um caso NULL de chave!!!
+		{
+			if(bypass == 0)
+			{
+				s_gil[ig].chaves_null+=1;  // temos chaves nulas, vai incrementando para análise final
+			}
+
+			// terminada os decodes de tipos...
+			if(s_gil[ig].tipo_dinamico == 0)
+			{
+				s_gil[ig].pos_bytes = pos_bytes;  // segue o baile de onde estava...
+			}
+			else
+			{
+				s_gil[ig].pos_bytes_dl = pos_bytes;  // para a próxima vez...
+				// lembrando que 's_gil[ig].pos_bytes' ja está na posição correta da sequência
+			}
+		}
+
+
+		deu_erro:
+
+		s_gil[ig].erro = erro;
+
+		if(erro==erGIL_OK)
+		{
+			s_gil[ig].cont_itens += 1;
+			s_gil[ig].chave_atual = chave;  // novooooo
+		}
+		else
+		{
+			break;  // deu erro, cai fora...
+		}
+
+		if(bypass == 0)
+		{
+			break;
+		}
+	}
+
+	return erro;
 }
 
 
@@ -1717,7 +2190,8 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 	uint16_t i, vezes = 1, nbytes=1, temp16, len=0;
 
 	uint16_t cont_list_aX=0, cont_list_bX=0, cont_list_stepX=0, pos_bytes_bk=0;
-	uint8_t tipo_muxX=0, tipo1X=0, tipo2X=0, flag_chave_fora=0;
+	uint8_t tipo_muxX=0, tipo1X=0, tipo2X=0, flag_chave_nova=0;
+
 
 	if(s_gil[ig].erro != erGIL_OK)
 	{
@@ -1760,24 +2234,103 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 		else
 		{
 			//return erGIL_OK;
-			flag_chave_fora = 1;
+			flag_chave_nova = 1;
 			goto chave_nova;
 		}
 	}
+
+	/*
+	if(s_gil[ig].bufr[s_gil[ig].pos_bytes] == TIPO_GIL_LDIN && s_gil[ig].tipo_dinamico==0)  // s_gil[ig].tipo_dinamico==0
+	{
+		// no momento nao vamos lidar com isso aqui
+		erro =  erGIL_70;
+		goto deu_erro;
+	}
+	*/
+	if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
+	{
+		if(s_gil[ig].bufr[s_gil[ig].pos_bytes] == TIPO_GIL_LDIN && s_gil[ig].tipo_dinamico==0)  // s_gil[ig].tipo_dinamico==0
+		{
+			// no momento nao vamos lidar com isso aqui
+			erro =  erGIL_70;
+			goto deu_erro;
+		}
+	}
+
+
+
+
+	//---------------------------------------------------------------------------------------------------------------------------
+	// antes de começar a mexer na pasição do buffer salvamos o offset, e principalmente caso seja um modo teste 'test_valor=1'
+	//printf("aaaaaaaaaaaaaa test_old:%u, test_valor:%u\n", s_gil[ig].test_old, test_valor);
+	if(s_gil[ig].test_old==1 && test_valor==1)
+	{
+		// indica que a última leitura de chave do pacote foi no modo teste e essa tambem será
+		// então temos que andar no offset com base na última chave...
+		s_gil[ig].pos_bytes = s_gil[ig].pos_bytes_oldt;
+	}
+	else if(s_gil[ig].test_old==0 && test_valor==1)
+	{
+		s_gil[ig].pos_bytes_oldt0 = s_gil[ig].pos_bytes;  // posição original primária antes do teste
+		s_gil[ig].cont_itens_oldt = s_gil[ig].cont_itens;
+		s_gil[ig].chave_atual_oldt = s_gil[ig].chave_atual;
+		//printf("primeira vez do teste, pos_bytes:%u, cont_itens:%u, chave_atual:%u\n", s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].chave_atual);
+	}
+	else if(s_gil[ig].test_old==1 && test_valor==0)
+	{
+		// quer ler realmente o chave e o modo teste está ativado
+		// temos que voltar onde parou quando leu a última sem modo teste
+		s_gil[ig].pos_bytes = s_gil[ig].pos_bytes_oldt0;
+		s_gil[ig].cont_itens = s_gil[ig].cont_itens_oldt;
+		s_gil[ig].chave_atual = s_gil[ig].chave_atual_oldt;
+		//printf("restaurando tudo, pos_bytes:%u, cont_itens:%u, chave_atual:%u\n", s_gil[ig].pos_bytes, s_gil[ig].cont_itens, s_gil[ig].chave_atual);
+	}
+	pos_bytes_bk = s_gil[ig].pos_bytes;
+	//---------------------------------------------------------------------------------------------------------------------------
+
+
 
 	if(chave > s_gil[ig].cont_itens)
 	{
 		// quer ler uma chave maior do que a contagem crescente...
 		// vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GIL_MODO_FULL'!!!
 		// OBS: 's_gil[ig].cont_itens' caminha junto conforme o decode crescente
-		erro = erGIL_23;
-		goto deu_erro;
+		if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
+		{
+			// vamos varrer o pacote e ir diretamente para essa chave que está pedindo
+			erro = gilson_busca_chave_full(chave, test_valor);
+			//printf("eiiii sommm1\n");
+			if(erro != erGIL_OK)
+			{
+				goto deu_erro;
+			}
+		}
+		else
+		{
+			erro = erGIL_23;
+			goto deu_erro;
+		}
 	}
 
 	if(s_gil[ig].cont_itens>0 && chave <= s_gil[ig].chave_atual && s_gil[ig].tipo_dinamico==0)
 	{
-		erro = erGIL_SMKEYd;
-		goto deu_erro;
+		// quer ler a mesma chave, isto é, a mesma ja lida anteriormente ou menor que essa
+		// se for FULL daria para contornar isso ou usar a 'gilson_decode_data_full_base()'
+		if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
+		{
+			// vamos varrer o pacote e ir diretamente para essa chave que está pedindo
+			erro = gilson_busca_chave_full(chave, test_valor);
+			//printf("eiiii sommm2\n");
+			if(erro != erGIL_OK)
+			{
+				goto deu_erro;
+			}
+		}
+		else
+		{
+			erro = erGIL_SMKEYd;
+			goto deu_erro;
+		}
 	}
 
 	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
@@ -1802,43 +2355,41 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 		tipo1X >>= 5;
 		tipo2X &= 0b11111;
 		s_gil[ig].pos_bytes += 1;
-		pos_bytes_bk = s_gil[ig].pos_bytes;
 
 		//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu0 chave:%u, tipomuxX:%u, tipo1X:%u, tipo2X:%u, pos_bytes:%u\n", chave, tipomuxX, tipo1X, tipo2X, s_gil[ig].pos_bytes);
 	}
 
-	if(tipo1 == GIL_LIST)
-	{
-		if(cont_list_a == 0)
-		{
-			erro = erGIL_24;
-			goto deu_erro;
-		}
-		vezes = cont_list_a;
 
-		if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
+	// se não for FULL, vai manter 0, senao vai ser escrito acima...
+	if(tipo_muxX!=TIPO_GIL_NULL)
+	{
+		if(tipo1 == GIL_LIST)
 		{
-			if(tipo_muxX!=TIPO_GIL_NULL)
+			if(cont_list_a == 0)
+			{
+				erro = erGIL_24;
+				goto deu_erro;
+			}
+			vezes = cont_list_a;
+
+			if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 			{
 				//memcpy(&bufr[pos_bytes], &vezes, 2);
 				memcpy(&cont_list_aX, &s_gil[ig].bufr[s_gil[ig].pos_bytes], 2);
 				s_gil[ig].pos_bytes += 2;
 			}
-		}
 
-		if(tipo2==GIL_tSTRING)
-		{
-			if(cont_list_b==0)
+			if(tipo2==GIL_tSTRING)
 			{
-				// precisamos do offset cru da lista de strings...
-				erro = erGIL_25;
-				goto deu_erro;
-			}
-			else
-			{
-				if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
+				if(cont_list_b==0)
 				{
-					if(tipo_muxX!=TIPO_GIL_NULL)
+					// precisamos do offset cru da lista de strings...
+					erro = erGIL_25;
+					goto deu_erro;
+				}
+				else
+				{
+					if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 					{
 						//bufr[pos_bytes] = (uint8_t)cont_list_b;  // len_string_max
 						cont_list_bX = s_gil[ig].bufr[s_gil[ig].pos_bytes];
@@ -1847,19 +2398,16 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 				}
 			}
 		}
-	}
-	else if(tipo1 == GIL_MTX2D)
-	{
-		if(cont_list_a == 0 || cont_list_b == 0  || cont_list_step == 0)
+		else if(tipo1 == GIL_MTX2D)
 		{
-			erro = erGIL_26;
-			goto deu_erro;
-		}
-		//vezes = cont_list_a * cont_list_b;
+			if(cont_list_a == 0 || cont_list_b == 0  || cont_list_step == 0)
+			{
+				erro = erGIL_26;
+				goto deu_erro;
+			}
+			//vezes = cont_list_a * cont_list_b;
 
-		if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
-		{
-			if(tipo_muxX!=TIPO_GIL_NULL)
+			if(s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV)
 			{
 				//bufr[pos_bytes] = (uint8_t)cont_list_a;
 				cont_list_aX = s_gil[ig].bufr[s_gil[ig].pos_bytes];
@@ -1872,61 +2420,69 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 				s_gil[ig].pos_bytes += 2;
 			}
 		}
-	}
-	else  // GIL_SINGLE
-	{
-		vezes = 1;
-		/*
-		if(tipo2==GIL_tSTRING)
+		else  // GIL_SINGLE
 		{
-			if(cont_list_a==0)  // por mais que não vá utilizar... para 1 string somente
+			vezes = 1;
+			/*
+			if(tipo2==GIL_tSTRING)
 			{
-				erro = -9;
-				goto deu_erro;
+				if(cont_list_a==0)  // por mais que não vá utilizar... para 1 string somente
+				{
+					erro = -9;
+					goto deu_erro;
+				}
 			}
+			*/
+			// 'cont_list_b' só precisa na codificacao, agora é com base no 'len' da vez
 		}
-		*/
-		// 'cont_list_b' só precisa na codificacao, agora é com base no 'len' da vez
 	}
 
 	//printf("gilson_decode_data_base::: modo:%u, chave:%u, cont_itens:%u, cont_itens2:%u\n", s_gil[ig].modo, chave, s_gil[ig].cont_itens, s_gil[ig].cont_itens2);
 
 	chave_nova:
 
+	//=======================================================================================================================================================
+	//=======================================================================================================================================================
 	// faz validacao do que tinha para com os parametros de entrada
-	if((s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV) && test_valor==1)
-	{
-		//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu1 chave:%u, modo:%u, tipomuxX:%u, tipo1:%u|%u, tipo2:%u|%u, pos_bytes:%u, cont_list_a:%u|%u, cont_list_b:%u|%u, cont_list_step:%u|%u, vezes:%u\n", chave, s_gil[ig].modo, tipo_muxX, tipo1, tipo1X, tipo2, tipo2X, pos_bytes_bk, cont_list_a, cont_list_aX, cont_list_b, cont_list_b, cont_list_step, cont_list_step, vezes);
 
+	if((s_gil[ig].modo == GIL_MODO_FULL || s_gil[ig].modo == GIL_MODO_KV) && flag_chave_nova==0)
+	{
 		if(tipo_muxX!=TIPO_GIL_NULL)
 		{
+			// OBS: quem manda é o "xxxX" pois são do pacode encodado FULL, então os parâmetros de entrada para simples validação não podem ser menores
 			if(tipo1 != tipo1X || tipo2 != tipo2X || (tipo1!=GIL_SINGLE && cont_list_a < cont_list_aX) || cont_list_b < cont_list_bX || cont_list_step < cont_list_stepX)
 			{
-				//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu1 chave:%u, modo:%u, tipomuxX:%u, tipo1:%u|%u, tipo2:%u|%u, pos_bytes:%u, cont_list_a:%u|%u, cont_list_b:%u|%u, cont_list_step:%u|%u, vezes:%u\n", chave, s_gil[ig].modo, tipomuxX, tipo1, tipo1X, tipo2, tipo2X, pos_bytes_bk, cont_list_a, cont_list_aX, cont_list_b, cont_list_b, cont_list_step, cont_list_step, vezes);
-				erro = erGIL_DIFIN;
+				//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu1 chave:%u(cont_itens:%u|%u), modo:%u, tipomuxX:%u, tipo1:%u|%u, tipo2:%u|%u, cont_list_a:%u|%u, cont_list_b:%u|%u, cont_list_step:%u|%u, vezes:%u\n", chave, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].modo, tipo_muxX, tipo1, tipo1X, tipo2, tipo2X, cont_list_a, cont_list_aX, cont_list_b, cont_list_bX, cont_list_step, cont_list_stepX, vezes);  // pos_bytes:%u pos_bytes_bk
+				erro = erGIL_64;
 				goto deu_erro;
 			}
-		}
-
-		// na realidade quem manda é o que está no pacote e não o externo, logo é os "X"
-		if(tipo1!=GIL_SINGLE && cont_list_a!=cont_list_aX)
-		{
-			vezes = cont_list_aX;
 		}
 	}
 	else
 	{
+		// MODO ZIP!!!!! ou cai aqui quando é MODO FULL com chave nova
+		// no ZIP não tem 'TIPO_GIL_NULL'
 		tipo1X = tipo1;
 		tipo2X = tipo2;
 		cont_list_aX = cont_list_a;
 		cont_list_bX = cont_list_b;
 		cont_list_stepX = cont_list_step;
 	}
+	//=======================================================================================================================================================
+	//=======================================================================================================================================================
+
+	// na realidade quem manda é o que está no pacote e não o externo, logo é os "X"
+	if(tipo1X!=GIL_SINGLE && cont_list_a!=cont_list_aX)
+	{
+		vezes = cont_list_aX;
+	}
+
+
 
 	if(tipo_muxX!=TIPO_GIL_NULL)
 	{
 		// PASSO 1: encontra tamanho de '*valor'
-		switch(tipo2)
+		switch(tipo2X)
 		{
 		case GIL_tBIT:
 			// nada ainda...
@@ -1962,11 +2518,11 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 		}
 
 		// PASSO 2: aloca os respectivos bytes em '*valor'
-		if(tipo2 == GIL_tSTRING)
+		if(tipo2X == GIL_tSTRING)
 		{
 			for(i=0; i<vezes; i++)
 			{
-				if(flag_chave_fora==0)
+				if(flag_chave_nova==0)
 				{
 					len = s_gil[ig].bufr[s_gil[ig].pos_bytes];
 					s_gil[ig].pos_bytes += 1;
@@ -1985,14 +2541,14 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 
 			}
 		}
-		else if(tipo2 == GIL_tBIT)
+		else if(tipo2X == GIL_tBIT)
 		{
 			// nada ainda...
 		}
 		else
 		{
 			// para o resto é só varer bytes
-			if(tipo1 == GIL_MTX2D)
+			if(tipo1X == GIL_MTX2D)
 			{
 				// vamos ao exemplo:
 				// float x[10][250] e na realidade vamos usar somente x[2][3] ==== x[cont_list_a][cont_list_b] com step de 'cont_list_step'
@@ -2000,7 +2556,7 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 				// logo se eu quero x[2][3] tenho que dar os offset com base nos valores máximos (250 elementos cada linha)
 				for(i=0; i<cont_list_aX; i++)
 				{
-					if(flag_chave_fora==0)
+					if(flag_chave_nova==0)
 					{
 						temp16 = i*cont_list_stepX*nbytes;  // passos em cada linha da matriz
 						if(test_valor==0)
@@ -2015,12 +2571,11 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 						temp16 = i*cont_list_stepX*nbytes;  // passos em cada linha da matriz
 						memset(valor+temp16, 0x00, nbytes*cont_list_bX);
 					}
-
 				}
 			}
-			else
+			else  // tipo1 == GIL_LIST
 			{
-				if(flag_chave_fora==0)
+				if(flag_chave_nova==0)
 				{
 					if(test_valor==0)
 					{
@@ -2038,41 +2593,69 @@ static int32_t gilson_decode_data_base(const uint8_t chave, char *nome_chave, co
 	}
 	else
 	{
-		s_gil[ig].chaves_null+=1;  // temos chaves nulas, vai incrementando para análise final
+		if(test_valor==0)
+		{
+			s_gil[ig].chaves_null+=1;  // temos chaves nulas, vai incrementando para análise final
+		}
 	}
 
 	deu_erro:
 
 	if(erro==erGIL_OK)
 	{
-		if(flag_chave_fora==0)
+		if(flag_chave_nova==0)
 		{
-			s_gil[ig].cont_itens += 1;
+			if(test_valor==0)
+			{
+				s_gil[ig].cont_itens += 1;
+				s_gil[ig].chave_atual = chave;
 
-			s_gil[ig].chave_atual = chave;
+				s_gil[ig].test_old = 0;
+			}
+			else
+			{
+				// caso seja modo teste, volta o valor do offset original
+				s_gil[ig].pos_bytes_oldt = s_gil[ig].pos_bytes;  // salva o que percorreu no teste
+				s_gil[ig].pos_bytes = pos_bytes_bk;  // volta para posição original anterior
+
+				if(1)  // s_gil[ig].test_old==1 && test_valor==1
+				{
+					// se ja estava ativado e ainda está no modo teste, então incrementa
+					s_gil[ig].cont_itens += 1;
+					s_gil[ig].chave_atual = chave;
+				}
+
+				s_gil[ig].test_old = 1;  // mantem ativo o modo teste
+			}
 		}
 	}
 	else
 	{
 		s_gil[ig].erro = erro;
 
-#if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-		printf_DEBUG("DEBUG gilson_decode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#else  // PC
-		printf("DEBUG gilson_decode_data::: ig:%u, ERRO:%i, modo:%u, chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", ig, erro, s_gil[ig].modo, chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
-#endif  // #if (GIL_TYPE_DEVICE==1)
-#endif  // #if (GIL_DEBUG_LIB==1)
+		// print erro???
 
 	}
+
+#if (GIL_DEBUG_LIB==1)
+	PRINT_DEBUG("DEBUG gilson_decode_data_base::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", chave:%"PRIu8", tipo_muxX:%"PRIu8", tipo1:%"PRIu8", tipo2:%"PRIu8", cont_list_a:%"PRIu16", cont_list_b:%"PRIu16", cont_list_step:%"PRIu16", test_valor:%"PRIu8", cont_itens:%"PRIu8", chave_atual:%"PRIu8", pos_bytes:%"PRIu16"\n",
+			ig, erro, s_gil[ig].modo, chave, tipo_muxX, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step, test_valor, s_gil[ig].cont_itens, s_gil[ig].chave_atual, s_gil[ig].pos_bytes);
+#endif  // #if (GIL_DEBUG_LIB==1)
 
 	return erro;
 }
 
 
+
+int32_t gilson_decode_data_valid(const uint8_t chave, char *nome_chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
+{
+	return gilson_decode_data_base(chave, nome_chave, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step, 1);
+}
+
+
 int32_t gilson_decode_data(const uint8_t chave, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 
 	//printf("gilson_decode_data::: chave:%u, tipo1:%u, tipo2:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u\n", chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step);
 
@@ -2086,77 +2669,80 @@ int32_t gilson_decode_dataKV(const uint8_t chave, char *nome_chave, const uint8_
 
 
 
+
+
+
 // funcoes auxiliares fortemente tipadas de decode
 
 //========================================= GIL_SINGLE
 int32_t gilson_decode_u8(const uint8_t chave, uint8_t *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tUINT8, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_s8(const uint8_t chave, int8_t *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tINT8, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_u16(const uint8_t chave, uint16_t *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tUINT16, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_s16(const uint8_t chave, int16_t *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tINT16, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_u32(const uint8_t chave, uint32_t *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tUINT32, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 int32_t gilson_decode_s32(const uint8_t chave, int32_t *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tINT32, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_u64(const uint8_t chave, uint64_t *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tUINT64, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_s64(const uint8_t chave, int64_t *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tINT64, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_f32(const uint8_t chave, float *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tFLOAT32, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_f64(const uint8_t chave, double *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tFLOAT64, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_str(const uint8_t chave, char *valor)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_SINGLE, GIL_tSTRING, (uint8_t *)valor, 0, 0, 0, 0);
 }
 
@@ -2165,77 +2751,77 @@ int32_t gilson_decode_str(const uint8_t chave, char *valor)
 //========================================= GIL_LIST
 int32_t gilson_decode_lu8(const uint8_t chave, uint8_t valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tUINT8, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_ls8(const uint8_t chave, int8_t valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tINT8, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lu16(const uint8_t chave, uint16_t valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tUINT16, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_ls16(const uint8_t chave, int16_t valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tINT16, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lu32(const uint8_t chave, uint32_t valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tUINT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_ls32(const uint8_t chave, int32_t valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tINT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lu64(const uint8_t chave, uint64_t valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tUINT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_ls64(const uint8_t chave, int64_t valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tINT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lf32(const uint8_t chave, float valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tFLOAT32, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lf64(const uint8_t chave, double valor[], const uint16_t cont_list_a)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tFLOAT64, (uint8_t *)valor, cont_list_a, 0, 0, 0);
 }
 
 
 int32_t gilson_decode_lstr(const uint8_t chave, char *valor, const uint16_t cont_list_a, const uint16_t cont_list_b)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_LIST, GIL_tSTRING, (uint8_t *)valor, cont_list_a, cont_list_b, 0, 0);
 }
 
@@ -2244,70 +2830,70 @@ int32_t gilson_decode_lstr(const uint8_t chave, char *valor, const uint16_t cont
 //========================================= GIL_MTX2D
 int32_t gilson_decode_mu8(const uint8_t chave, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tUINT8, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_ms8(const uint8_t chave, int8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tINT8, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mu16(const uint8_t chave, uint16_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tUINT16, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_ms16(const uint8_t chave, int16_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tINT16, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mu32(const uint8_t chave, uint32_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tUINT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_ms32(const uint8_t chave, int32_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tINT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mu64(const uint8_t chave, uint64_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tUINT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_ms64(const uint8_t chave, int64_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tINT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mf32(const uint8_t chave, float *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tFLOAT32, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
 
 int32_t gilson_decode_mf64(const uint8_t chave, double *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
 {
-	char temp[GIL_LIMIT_KEY_NAME];  // dummy
+	char temp[4];  // dummy GIL_LIMIT_KEY_NAME
 	return gilson_decode_data_base(chave, temp, GIL_MTX2D, GIL_tFLOAT64, (uint8_t *)valor, cont_list_a, cont_list_b, cont_list_step, 0);
 }
 
@@ -2322,7 +2908,7 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 {
 	int32_t erro=erGIL_OK;
 	uint16_t i, vezes = 1, cont_list_a=0, cont_list_b=0, cont_list_step=0, nbytes=1, temp16, pos_bytes, len, pos_bytes_bk=0;
-	uint8_t tipo_mux=0, tipo1=255, tipo2=255, bypass=0;
+	uint8_t tipo_mux=0, tipo1=255, tipo2=255, bypass=0, flag_mesmo=0;
 
 	if(s_gil[ig].erro != erGIL_OK)
 	{
@@ -2367,12 +2953,22 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 
 
 #if (GIL_DEBUG_LIB==1 && GIL_PRINT_DEBUG==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_decode_data_full_base init::: ig:%u, chave:%u, nulos:%u, cont_itens:%u, cont_itens2:%u, pos_bytes:%u\n", ig, chave, s_gil[ig].chaves_null, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].pos_bytes);
-#else  // PC
-	printf("DEBUG gilson_decode_data_full_base init::: ig:%u, chave:%u, nulos:%u, cont_itens:%u, cont_itens2:%u, pos_bytes:%u\n", ig, chave, s_gil[ig].chaves_null, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].pos_bytes);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_decode_data_full_base init::: ig:%"PRIu8", chave:%"PRIu8", nulos:%"PRIu8", cont_itens:%"PRIu8", cont_itens2:%"PRIu8", pos_bytes:%"PRIu16", tipo_dinamico:%"PRIu8"\n",
+			ig, chave, s_gil[ig].chaves_null, s_gil[ig].cont_itens, s_gil[ig].cont_itens2, s_gil[ig].pos_bytes, s_gil[ig].tipo_dinamico);
 #endif  // #if (GIL_DEBUG_LIB==1)
+
+
+	if(s_gil[ig].tipo_dinamico == 0)
+	{
+		if(s_gil[ig].cont_itens>0 && chave == s_gil[ig].chave_atual)
+		{
+			// quer ler a mesma chave porem ja deu os offsets..
+			//s_gil[ig].chave_atual += 1;  // vou forçar ser maior para reiniciar a busca
+			//printf("mesma atual chave:%u, cont_itens:%u\n", chave, s_gil[ig].cont_itens);
+			//s_gil[ig].cont_itens -= 1;
+			flag_mesmo = 1;
+		}
+	}
 
 
 	while(1)
@@ -2383,13 +2979,14 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 			// vai iniciar de onde parou até achar o que queremos
 			bypass=1;
 		}
-		else if(chave < s_gil[ig].chave_atual)
+		else if(chave < s_gil[ig].chave_atual || flag_mesmo==1)
 		{
+			flag_mesmo = 0;
 			// quer ler uma chave menor, que ja foi lida e/u passada... temos que ir para trás
 			// vai partir de zero e vai até achar o que queremos
 			bypass=1;
 			s_gil[ig].cont_itens = 0;
-			s_gil[ig].pos_bytes = OFFSET_MODO_FULL;
+			s_gil[ig].pos_bytes = GIL_OFFSET_MODO_FULL;
 		}
 		else
 		{
@@ -2429,7 +3026,7 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 		pos_bytes_bk = pos_bytes;
 
 
-		if(tipo_mux != TIPO_GIL_NULL)
+		if(tipo_mux!=TIPO_GIL_NULL)
 		{
 			// 0baaabbbbb = a:tipo1, b=tipo2
 			//tipo_mux = tipo1<<5;
@@ -2620,7 +3217,6 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 				s_gil[ig].pos_bytes_dl = pos_bytes;  // para a próxima vez...
 				// lembrando que 's_gil[ig].pos_bytes' ja está na posição correta da sequência
 			}
-
 		}
 		// else (tipo1==255 && tipo2==255) temos um caso NULL de chave!!!
 
@@ -2628,21 +3224,24 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 		//printf("sacuuuuuuuuuuuuuuuuuuuuuuuu2 chave:%u, tipomuxX:%u, tipo1X:%u, tipo2X:%u, pos_bytes:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, vezes:%u\n", chave, tipo_mux, tipo1, tipo2, pos_bytes_bk, cont_list_a, cont_list_b, cont_list_step, vezes);
 
 #if (GIL_DEBUG_LIB==1 && GIL_PRINT_DEBUG==1)
-#if (GIL_TYPE_DEVICE==0)
-		printf_DEBUG("DEBUG gilson_decode_data_full_base loop::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
-#else  // PC
-		printf("DEBUG gilson_decode_data_full_base loop::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+		PRINT_DEBUG("DEBUG gilson_decode_data_full_base loop::: ig:%"PRIu8", ERRO:%"PRIi32", chave:%"PRIu8", bypass:%"PRIu8", tipo1:%"PRIu8", tipo2:%"PRIu8", nulos:%"PRIu8", cont_list_a:%"PRIu16", cont_list_b:%"PRIu16", cont_list_step:%"PRIu16", cont_itens:%"PRIu8", pos_bytes:%"PRIu16"\n",
+				ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 
-		s_gil[ig].erro = erro;
+		//s_gil[ig].erro = erro;
 
 		deu_erro:
+
+		s_gil[ig].erro = erro;
 
 		if(erro==erGIL_OK)
 		{
 			s_gil[ig].cont_itens += 1;
+			if(s_gil[ig].tipo_dinamico == 0)
+			{
+				s_gil[ig].chave_atual = chave;  // novooooo
+			}
 		}
 		else
 		{
@@ -2657,11 +3256,8 @@ static int32_t gilson_decode_data_full_base(const uint8_t chave, char *nome_chav
 
 
 #if (GIL_DEBUG_LIB==1 && GIL_PRINT_DEBUG==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_decode_data_full_base::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
-#else  // PC
-	printf("DEBUG gilson_decode_data_full_base::: ig:%u, ERRO:%i, chave:%u, bypass:%u, tipo1:%u, tipo2:%u, nulos:%u, cont_list_a:%u, cont_list_b:%u, cont_list_step:%u, cont_itens:%u, pos_bytes:%u\n", ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_decode_data_full_base end::: ig:%"PRIu8", ERRO:%"PRIi32", chave:%"PRIu8", bypass:%"PRIu8", tipo1:%"PRIu8", tipo2:%"PRIu8", nulos:%"PRIu8", cont_list_a:%"PRIu16", cont_list_b:%"PRIu16", cont_list_step:%"PRIu16", cont_itens:%"PRIu8", pos_bytes:%"PRIu16"\n",
+			ig, erro, chave, bypass, tipo1, tipo2, s_gil[ig].chaves_null, cont_list_a, cont_list_b, cont_list_step, s_gil[ig].cont_itens, s_gil[ig].pos_bytes);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 	return erro;
@@ -2690,6 +3286,7 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 	uint8_t i, tipo_mux=0, tipo1=255, tipo2=255;
 
 	// OBS: não foi testado ainda em modo KV
+	// OBS: tem que passar por todas as chaves do modo dl
 
 	if(s_gil[ig].erro != erGIL_OK)
 	{
@@ -2827,7 +3424,7 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 			// 'cont_list_a' só precisa na codificacao, agora é com base no 'len' da vez
 		}
 	}
-	s_gil[ig].pos_tipo_dl_end = s_gil[ig].pos_bytes;  // onde começa a 'data' de fato!!!!!
+	s_gil[ig].pos_tipo_dl_close = s_gil[ig].pos_bytes;  // onde começa a 'data' de fato!!!!!
 
 
 
@@ -2844,71 +3441,24 @@ int32_t gilson_decode_dl_init(const uint8_t chave)
 
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_decode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, s_gil[ig].tam_list, s_gil[ig].nitens);
-#else  // PC
-	printf("DEBUG gilson_decode_dl_init::: ig:%u, ERRO:%i, modo:%u, chave:%u, tam_list:%u, nitens:%u\n", ig, erro, s_gil[ig].modo, chave, s_gil[ig].tam_list, s_gil[ig].nitens);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_decode_dl_init::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", chave:%"PRIu8", tam_list:%"PRIu8", nitens:%"PRIu8", pos_tipo_dl_init:%"PRIu16", pos_tipo_dl_close:%"PRIu16"\n",
+			ig, erro, s_gil[ig].modo, chave, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].pos_tipo_dl_init, s_gil[ig].pos_tipo_dl_close);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 	return erro;
 }
 
-/*
-int32_t gilson_decode_dl_data_zip(const uint8_t item, const uint8_t tipo1, const uint8_t tipo2, uint8_t *valor, const uint16_t cont_list_a, const uint16_t cont_list_b, const uint16_t cont_list_step)
-{
-	int32_t erro=erGIL_OK;
-	char temp[4];
-
-	if(s_gil[ig].tipo_operacao!=e_OPER_DECODE)
-	{
-		erro = erGIL_OPER;
-		goto deu_erro;
-	}
-
-	if(item > s_gil[ig].nitens)
-	{
-		// quer add uma item maior do que a contagem crescente... não tem como
-		erro = erGIL_59;
-		goto deu_erro;
-	}
-
-	// com base no 'item' vamos deixar o offset pronto para em 'gilson_decode_data_full_base' saber como resgatar o 'tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step' do header
-	if(item == 0)
-	{
-		s_gil[ig].pos_bytes_dl = s_gil[ig].pos_tipo_dl_init;  // posicao original do 'header'
-	}
-
-	erro = gilson_decode_data_base(s_gil[ig].chave_dl, temp, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step, 0);
-
-	deu_erro:
-
-	if(erro==erGIL_OK)
-	{
-		s_gil[ig].cont_tipo_dinamico += 1;
-	}
-	else
-	{
-		s_gil[ig].erro = erro;
-
-#if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-		printf_DEBUG("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u\n", ig, erro, s_gil[ig].modo, item);
-#else  // PC
-		printf("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u\n", ig, erro, s_gil[ig].modo, item);
-#endif  // #if (GIL_TYPE_DEVICE==1)
-#endif  // #if (GIL_DEBUG_LIB==1)
-
-	}
-
-	return erro;
-}
-*/
 
 int32_t gilson_decode_dl_data(const uint8_t item, uint8_t *valor)
 {
 	int32_t erro=erGIL_OK;
 	char temp[4];
+
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		goto deu_erro;
+	}
 
 	// somente funciona no modo 'GIL_MODO_FULL' e 'GIL_MODO_KV'!!!!
 	if(s_gil[ig].modo != GIL_MODO_FULL && s_gil[ig].modo != GIL_MODO_KV)
@@ -2947,49 +3497,54 @@ int32_t gilson_decode_dl_data(const uint8_t item, uint8_t *valor)
 	else
 	{
 		s_gil[ig].erro = erro;
+	}
+
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-		printf_DEBUG("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u, chave_dl:%u\n", ig, erro, s_gil[ig].modo, item, s_gil[ig].chave_dl);
-#else  // PC
-		printf("DEBUG gilson_decode_dl::: ig:%u, ERRO:%i, modo:%u, item:%u, chave_dl:%u\n", ig, erro, s_gil[ig].modo, item, s_gil[ig].chave_dl);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_decode_dl::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", item:%"PRIu8", chave_dl:%"PRIu8", cont_tipo_dinamico:%"PRIu16"\n",
+			ig, erro, s_gil[ig].modo, item, s_gil[ig].chave_dl, s_gil[ig].cont_tipo_dinamico);
 #endif  // #if (GIL_DEBUG_LIB==1)
-
-	}
 
 	return erro;
 }
 
 
 
-int32_t gilson_decode_dl_end(void)
+int32_t gilson_decode_dl_close(void)
 {
 	int32_t erro=erGIL_OK;
 
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+	}
 	// se não bateu o numero de 'tam_list' e/ou 'nitens' da pra gerar um erro...
-	if(s_gil[ig].tipo_dinamico == 0)
+	else if(s_gil[ig].tipo_dinamico == 0)
 	{
 		erro = erGIL_60;
 	}
 	else if(s_gil[ig].cont_tipo_dinamico != s_gil[ig].tam_list*s_gil[ig].nitens)
 	{
 		// total de itens geral não bate a conta com o programado
+		// OBS: tem que passar por todas as chaves do modo dl
 		erro = erGIL_61;
 	}
 
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_decode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
-#else  // PC
-	printf("DEBUG gilson_decode_dl_end::: ig:%u, ERRO:%i, modo:%u, tam_list:%u, nitens:%u, tipo_dinamico:%u\n", ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_decode_dl_close::: ig:%"PRIu8", ERRO:%"PRIi32", modo:%"PRIu8", tam_list:%"PRIu8", nitens:%"PRIu8", tipo_dinamico:%"PRIu16"\n",
+			ig, erro, s_gil[ig].modo, s_gil[ig].tam_list, s_gil[ig].nitens, s_gil[ig].cont_tipo_dinamico);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
-	s_gil[ig].tipo_dinamico = 0;  // finalizando o tratar um tipo dinamico
+	if(s_gil[ig].erro == erGIL_OK)
+	{
+		s_gil[ig].tipo_dinamico = 0;  // finalizando o tratar um tipo dinamico
+	}
 
-	// OBS: finaliza somente esse tipo de dado 'lista dinâmica' mas a finalização do pacote geral é dado por 'gilson_decode_end_base()'
+
+	// OBS: finaliza somente esse tipo de dado 'lista dinâmica' mas a finalização do pacote geral é dado por 'gilson_decode_close_base()'
+
+	s_gil[ig].erro = erro;
 
 	return erro;
 }
@@ -3008,6 +3563,14 @@ int32_t gilson_decode(const uint8_t chave, ...)
 	uint8_t *valor;
 	char *nome_chave = {"\0"};
 	va_list argptr;
+
+
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		//erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		//goto deu_erro;
+		return s_gil[ig].erro;
+	}
 
 	va_start(argptr, chave);
 
@@ -3076,7 +3639,8 @@ int32_t gilson_decode(const uint8_t chave, ...)
 // só funciona para modos FULL
 int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chaves, const uint8_t *pack)
 {
-	int32_t erro=erGIL_OK, pos_bytes=0;
+
+	int32_t erro=erGIL_OK;
 	uint8_t modo=0, i, dummy;
 	char temp[GIL_LIMIT_KEY_NAME];  // dummy
 
@@ -3084,38 +3648,53 @@ int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chave
 
 	erro = gilson_decode_init(pack, &modo);
 
-	if(modo == GIL_MODO_FULL || modo == GIL_MODO_KV)
+	if(erro==erGIL_OK)
 	{
-		if(tot_chaves>s_gil[ig].cont_itens2 && GIL_FLAG_NEW_KEY==1)
+		if(s_gil[ig].bufr[s_gil[ig].pos_bytes] == TIPO_GIL_LDIN)
 		{
-			// se tudo certo o pacote é o mesmo porem uma nova versao com mais chaves... que vamos ignorar as novas
-			tot_chaves = s_gil[ig].cont_itens2;
-		}
-
-
-		if(tot_chaves == s_gil[ig].cont_itens2)
-		{
-			for(i=0; i<s_gil[ig].cont_itens2; i++)
-			{
-				// MODO ZIP: complica pois caso algum 'cont_list_a', 'cont_list_b' ou 'cont_list_step' seja dinâmico e não segue a ordem max do 'map_full[][]' ai não tem como dar certo essa rotina
-				erro = gilson_decode_data_base(map_full[i][0], temp, map_full[i][1], map_full[i][2], CAST_GIL dummy, map_full[i][3], map_full[i][4], map_full[i][5], 1);  // vamos testar...
-			}
-			pos_bytes = gilson_decode_end();
-
-			if(pos_bytes<=0)
-			{
-				erro=pos_bytes;
-			}
+			// no futuro da para validar isso...
+			//printf("chave TIPO_GIL_LDIN, cont_itens2:%u\n", s_gil[ig].cont_itens2);
+			erro =  erGIL_68;
 		}
 		else
 		{
-			// e se if(tot_chaves > LIMIT_GIL_KEYS)  erro = erGIL_LIMKEY;
-			erro = erGIL_DIFKEY;
+			if(modo == GIL_MODO_FULL || modo == GIL_MODO_KV)
+			{
+				if(tot_chaves>s_gil[ig].cont_itens2 && GIL_FLAG_NEW_KEY==1)
+				{
+					// se tudo certo o pacote é o mesmo porem uma nova versao com mais chaves... que vamos ignorar as novas
+					tot_chaves = s_gil[ig].cont_itens2;
+				}
+
+
+				if(tot_chaves == s_gil[ig].cont_itens2)
+				{
+					for(i=0; i<s_gil[ig].cont_itens2; i++)
+					{
+						if(s_gil[ig].bufr[s_gil[ig].pos_bytes] == TIPO_GIL_LDIN)
+						{
+							// no futuro da para validar isso...
+							//printf("chave TIPO_GIL_LDIN, cont_itens2:%u\n", s_gil[ig].cont_itens2);
+							erro =  erGIL_69;
+							break;
+						}
+
+						// MODO ZIP: complica pois caso algum 'cont_list_a', 'cont_list_b' ou 'cont_list_step' seja dinâmico e não segue a ordem max do 'map_full[][]' ai não tem como dar certo essa rotina
+						erro = gilson_decode_data_base(map_full[i][0], temp, map_full[i][1], map_full[i][2], CAST_GIL dummy, map_full[i][3], map_full[i][4], map_full[i][5], 1);  // vamos testar...
+					}
+					erro = gilson_decode_close();
+				}
+				else
+				{
+					// e se if(tot_chaves > LIMIT_GIL_KEYS)  erro = erGIL_LIMKEY;
+					erro = erGIL_DIFKEY;
+				}
+			}
+			else
+			{
+				erro =  erGIL_DIFKEYb;
+			}
 		}
-	}
-	else
-	{
-		erro =  erGIL_DIFKEYb;
 	}
 
 	memset(&s_gil[ig], 0x00, sizeof(s_gil[ig]));  // limpa para liberar pois não vamos continuar o decode...
@@ -3128,10 +3707,11 @@ int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chave
 // entra com 'mapa' fixo dos dados que serão decodados
 // em '...' teremos 'nome_chave' caso seja KV e/ou 'valor' que é a data específica
 // perigo de explodir o sistema, caso passe parâmetros errados ou esqueça de passar algum
-int32_t gilson_decode_mapfix(const uint16_t *map, ...)
+int32_t gilson_decode_mapfix(const uint16_t map[6], ...)
 {
-	uint16_t cont_list_a=0, cont_list_b=0, cont_list_step=0;
-	uint8_t chave=0, tipo1=255, tipo2=255, modofull=1;
+	//uint16_t cont_list_a=0, cont_list_b=0, cont_list_step=0;
+	//uint8_t chave=0, tipo1=255, tipo2=255;
+	uint8_t modofull=1;
 	uint8_t *valor;
 	char *nome_chave = {"\0"};
 	va_list argptr;
@@ -3146,11 +3726,18 @@ int32_t gilson_decode_mapfix(const uint16_t *map, ...)
 	cont_list_step = map[5] (se for o caso...)
 	*/
 
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		//erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		//goto deu_erro;
+		return s_gil[ig].erro;
+	}
+
 	va_start(argptr, map);
 
-	chave = map[0];
-	tipo1 = map[1];
-	tipo2 = map[2];
+	//chave = map[0];
+	//tipo1 = map[1];
+	//tipo2 = map[2];
 
 	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
@@ -3165,7 +3752,8 @@ int32_t gilson_decode_mapfix(const uint16_t *map, ...)
 
 	valor = va_arg(argptr, uint8_t *);
 
-	if(modofull==0)
+	/*
+	if(modofull==0 || (modofull==1 && GIL_VALID_MAP_KEY==1))
 	{
 		if(tipo1 == GIL_SINGLE)
 		{
@@ -3193,17 +3781,23 @@ int32_t gilson_decode_mapfix(const uint16_t *map, ...)
 			// erro
 		}
 	}
+	*/
 
 	va_end(argptr);
 
-
 	if(modofull==0)
 	{
-		return gilson_decode_data_base(chave, nome_chave, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step, 0);
+		//return gilson_decode_data_base(chave, nome_chave, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step, 0);
+		return gilson_decode_data_base(map[0], nome_chave, map[1], map[2], valor, map[3], map[4], map[5], 0);
 	}
 	else
 	{
+#if (GIL_VALID_MAP_KEY == 1)
+		//return gilson_decode_data_base(chave, nome_chave, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step, 0);
+		return gilson_decode_data_base(map[0], nome_chave, map[1], map[2], valor, map[3], map[4], map[5], 0);
+#else
 		return gilson_decode_data_full_base(chave, nome_chave, valor);
+#endif  // #if (GIL_VALID_MAP_KEY == x)
 	}
 }
 
@@ -3211,10 +3805,12 @@ int32_t gilson_decode_mapfix(const uint16_t *map, ...)
 // entra com 'mapa' dinâmico dos dados que serão decodados
 // em '...' teremos 'nome_chave' caso seja KV e/ou 'valor' que é a data específica, seguido de até 3 valores
 // perigo de explodir o sistema, caso passe parâmetros errados ou esqueça de passar algum
-int32_t gilson_decode_mapdin(const uint16_t *map, ...)
+int32_t gilson_decode_mapdin(const uint16_t map[6], ...)
 {
+	int32_t erro=erGIL_OK;
 	uint16_t cont_list_a=0, cont_list_b=0, cont_list_step=0;
-	uint8_t chave=0, tipo1=255, tipo2=255, modofull=1;
+	//uint8_t chave=0, tipo1=255, tipo2=255;
+	uint8_t modofull=1;
 	uint8_t *valor;
 	char *nome_chave = {"\0"};
 	va_list argptr;
@@ -3226,11 +3822,18 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 	tipo2 = map[2] (obrigatório)
 	*/
 
+	if(s_gil[ig].erro != erGIL_OK)
+	{
+		//erro = s_gil[ig].erro;  // vamos manter sempre o mesmo erro!!!
+		//goto deu_erro;
+		return s_gil[ig].erro;
+	}
+
 	va_start(argptr, map);
 
-	chave = map[0];
-	tipo1 = map[1];
-	tipo2 = map[2];
+	//chave = map[0];
+	//tipo1 = map[1];
+	//tipo2 = map[2];
 
 	if(s_gil[ig].modo == GIL_MODO_KV || s_gil[ig].modo == GIL_MODO_KV_ZIP)
 	{
@@ -3247,24 +3850,25 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 
 	valor = va_arg(argptr, uint8_t *);
 
-	if(modofull==0)
+	// OBS: quando '(modofull==1 && GIL_VALID_MAP_KEY==1)' é válido, teríamos que entrar com valores em '...' de cont_list_X mas isso não é obrigatório!!! e agora???
+	if(modofull==0 || (modofull==1 && GIL_VALID_MAP_KEY==1))  // if(modofull==0)
 	{
-		if(tipo1 == GIL_SINGLE)
+		if(map[1] == GIL_SINGLE)
 		{
-			if(tipo2 == GIL_tSTRING)
+			if(map[2] == GIL_tSTRING)
 			{
 				cont_list_a = (uint16_t)va_arg(argptr, int);
 			}
 		}
-		else if(tipo1 == GIL_LIST)
+		else if(map[1] == GIL_LIST)
 		{
 			cont_list_a = (uint16_t)va_arg(argptr, int);
-			if(tipo2 == GIL_tSTRING)
+			if(map[2] == GIL_tSTRING)
 			{
 				cont_list_b = (uint16_t)va_arg(argptr, int);
 			}
 		}
-		else if(tipo1 == GIL_MTX2D)
+		else if(map[1] == GIL_MTX2D)
 		{
 			cont_list_a = (uint16_t)va_arg(argptr, int);
 			cont_list_b = (uint16_t)va_arg(argptr, int);
@@ -3278,14 +3882,33 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 
 	va_end(argptr);
 
+	// validação 1
+	if((map[1]!=GIL_SINGLE && cont_list_a > map[3]) || cont_list_b > map[4] || cont_list_step > map[5])
+	{
+		// ja verifica aqui se o mapa está de acordo com o decodificado no dinâmico 'argptr'
+		erro=erGIL_67;
+		s_gil[ig].erro = erro;
+		return erro;
+	}
 
 	if(modofull==0)
 	{
-		return gilson_decode_data_base(chave, nome_chave, tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step, 0);
+		return gilson_decode_data_base(map[0], nome_chave, map[1], map[2], valor, cont_list_a, cont_list_b, cont_list_step, 0);
 	}
 	else
 	{
+#if (GIL_VALID_MAP_KEY == 1)
+
+		// se passou da 'validação 1' e os valores de 'cont_list_X' ficaram zerados pode ser que o usuário não entrou com eles em '...'
+		if(cont_list_a==0) cont_list_a = map[3];
+		if(cont_list_b==0) cont_list_b = map[4];
+		if(cont_list_step==0) cont_list_step = map[5];
+
+		return gilson_decode_data_base(map[0], nome_chave, map[1], map[2], valor, cont_list_a, cont_list_b, cont_list_step, 0);
+#else
 		return gilson_decode_data_full_base(chave, nome_chave, valor);
+#endif  // #if (GIL_VALID_MAP_KEY == x)
+
 	}
 }
 
@@ -3294,14 +3917,15 @@ int32_t gilson_decode_mapdin(const uint16_t *map, ...)
 // buffer 'pack' deve suportar o pacote completo para alocar o resultado em 'valor'
 int32_t gilson_decode_key(const uint8_t *pack, const uint8_t chave, uint8_t *valor)
 {
-	int32_t erro=erGIL_OK, pos_bytes=0;
+	uint32_t pos_bytes = 0;
+	int32_t erro=erGIL_OK;
 	uint8_t modo=0;
 
 	erro = gilson_decode_init(pack, &modo);
 	if(erro==0 && modo==GIL_MODO_FULL)
 	{
 		erro = gilson_decode(chave, valor);
-		pos_bytes = gilson_decode_end();
+		erro = gilson_decode_close_len(&pos_bytes);
 	}
 	else
 	{
@@ -3310,11 +3934,8 @@ int32_t gilson_decode_key(const uint8_t *pack, const uint8_t chave, uint8_t *val
 
 
 #if (GIL_DEBUG_LIB==1)
-#if (GIL_TYPE_DEVICE==0)
-	printf_DEBUG("DEBUG gilson_decode_key::: erro:%i, modo:%u, chave:%u, pos_bytes:%i\n", erro, modo, chave, pos_bytes);
-#else  // PC
-	printf("DEBUG gilson_decode_key::: erro:%i, modo:%u, chave:%u, pos_bytes:%i\n", erro, modo, chave, pos_bytes);
-#endif  // #if (GIL_TYPE_DEVICE==1)
+	PRINT_DEBUG("DEBUG gilson_decode_key::: erro:%"PRIi32", modo:%"PRIu8", chave:%"PRIu8", pos_bytes:%"PRIu32"\n",
+			erro, modo, chave, pos_bytes);
 #endif  // #if (GIL_DEBUG_LIB==1)
 
 
@@ -4227,7 +4848,7 @@ static int info_lista(const char *str_lista, const int len, const int barras_ext
 
 
 
-int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32_t size_max_pack)
+int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32_t size_pack)
 {
 	// testes...
 	// basicamente é fazer o 'parse' do JSON para detectar chave e valor e quando temos listas ou objeto dentro de objeto e quando é string, inteiro ou flutuante e otimizar para o melhor formato em bytes
@@ -4660,7 +5281,7 @@ int32_t gilson_encode_from_json(const char *json_in, uint8_t *pack, const uint32
 
 	deu_erro:
 
-	printf("FIMMMMMMMMMMMMM erro:%i, size: in:%u|gilson:%u|json:%u, init_obj:%i\n", erro, size_max_pack, size_max_pack2, size_json, init_obj);
+	printf("FIMMMMMMMMMMMMM erro:%i, size: in:%u|gilson:%u|json:%u, init_obj:%i\n", erro, size_pack, size_max_pack2, size_json, init_obj);
 
 	return erro;
 }
