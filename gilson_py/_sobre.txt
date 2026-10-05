@@ -1,0 +1,48 @@
+ ============================================================================
+ Name			: gilson_py
+ Author			: matheus j. mella
+ Description    : biblioteca 'gilson'
+ GitHub			: https://github.com/casimirdes/gilson
+ ============================================================================
+
+DATA: 30/12/2024
+    versão 0.2 do formato "gilson", com esquema de KV ala key:value, entao temos que entrar com nome da chave...
+    resalvas em comparação a lib em C, aqui não tem esquema de ponteiros/vetor em RAM e os retornos são diferentes
+    foi mantido mesmo esquema de 'struct_gilson' limitando a 'LEN_PACKS_GILSON' o tamanho por mais que aqui a RAM é gigante...
+    mas vai de utilizarmos em um ambiente micropython...
+DATA: 18/01/25
+    versão 0.3
+    separado as funcoes caso vamos utilizar no estilo KV chama funcoes especificar para
+DATA: 29/07/25
+    ajustes com base na versão 0.53 gilson_c
+DATA: 26/09/25
+    ajustes com base nas mudanças da lib em C 0.54
+DATA: 30/09/25
+    tratamento e mapeamento de erros
+    uma leve tipagem nas funções
+    uso de 'dataclasses' para organizar e tipar a struct/class principal
+    python >= 3.10 ????
+    flag para usar lib interna 'array' ou a externa 'numpy'
+DATA: 04/10/25
+    separado constantes em arquivo '_defines.py'
+    criado 'IntEnum' para proteção e organização
+    OBS: saiu um pouco do padrão das variáveis do C
+DATA: 18/01/26
+    remapeamento de nomes "GSON_" -> "GIL_"
+    ajuste em 'decode_key()'
+DATA: 01/08/26
+    bug quando usa 'FLAG_USE_NUMPY=False'
+    bug chave muda de tipo1, tipo2 no modo FULL
+    ajustes do modo teste
+    flag 'GIL_FLAG_NEW_KEY'
+    bug leitura chave repetida ou anterior/fora de ordem no FULL
+DATA: 03/08/26
+    fazer brique de teste de chave com o mapa+FULL no python
+	ajustar todas as saídas e padronizar com o "finally"
+DATA: 04/10/26
+    versão 0.56 Python casado com versão 0.59 C
+    perfumarias gerais
+    revisão em pacotes com 'TIPO_GIL_NULL' e 'TIPO_GIL_LDIN'
+    troca de final de nome "_end" para "_close"
+    raise GotoErro(erro)
+

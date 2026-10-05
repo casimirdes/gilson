@@ -1,4 +1,4 @@
-from enum import IntEnum
+#from enum import IntEnum
 
 # constantes globais:
 """
@@ -50,13 +50,23 @@ GIL_LIMIT_KEYS = 255  # até 255 chaves cada pacote gilson, (0 a 254)
 """
 
 
-class Const(IntEnum):
+
+class ConstMeta(type):
+    def __setattr__(cls, key, value):
+        raise AttributeError(f"Não é permitido modificar a constante '{key}'")
+
+
+#class Const(IntEnum):
+class Const(metaclass=ConstMeta):
+    # GIL_DEBUG_LIB = True  # printa ou não mensagens de debug...
+    GIL_DEBUG_LIB = False
+
+    LEN_PACKS_GILSON = 2  # 2 pacotes manipulaveis "ao mesmo tempo", se abriu o segundo tem que fechar para voltar para o primeiro!!!
+
     OFFSET_MODO_ZIP = 2
     OFFSET_MODO_FULL = 8
 
     PACK_MAX_BYTES = 65536  # max 65536 bytes um pacote gilson
-
-    LEN_PACKS_GILSON = 2  # 2 pacotes manipulaveis "ao mesmo tempo", se abriu o segundo tem que fechar para voltar para o primeiro!!!
 
     TIPO_GIL_LDIN = 0b11100000  # lista dinâmica de dados de diversos tipos, limitado até 255 tipos e não pode ter lista de lista
     TIPO_GIL_NULL = 0b11111111  # quando for entrar com uma data nula, vai chamar uma função específica para sinalizar que vai gravar a chave porem não terá dados
@@ -65,12 +75,15 @@ class Const(IntEnum):
     e_OPER_ENCODE = 1  # operação de encode()
     e_OPER_DECODE = 2  # operação de decode()
 
+    GIL_FLAG_NEW_KEY = 1  # nova chave: para erros do tipo 'er_26' e 'er_60'::: 0=retorno com erro, 1=avança e limpa data
+    GIL_TESTE_MODO_JSON = 0  # ainda experimental...
+
     GIL_LIMIT_KEYS = 255  # até 255 chaves cada pacote gilson, (0 a 254)
     GIL_LIMIT_STRING = 255  # tamanho maximo de um item que é do tipo string, seja 'GIL_SINGLE' ou 'GIL_LIST'
     GIL_LIMIT_KEY_NAME = 16  # tamanho máximo do nome chave de cada elemento ala JSON quando utilizado modo 'GIL_MODO_KV'
 
 
-class Modo(IntEnum):
+class Modo(metaclass=ConstMeta):
     """
     GIL_MODO_ZIP = 0  # é cru, sem nada, somente a data bruta, tem 1 byte adicional que é [0]=modo
     GIL_MODO_FULL = 1  # modo padão com offset, crc, identificador
@@ -86,7 +99,7 @@ class Modo(IntEnum):
     JSON = 4
     MAX = 5
 
-class Tipo1(IntEnum):
+class Tipo1(metaclass=ConstMeta):
     """
     GIL_SINGLE = 0  # valor unico
     GIL_LIST = 1  # é no formato lista, [u16] mas até 64k
@@ -99,7 +112,7 @@ class Tipo1(IntEnum):
     MAX = 3
 
 
-class Tipo2(IntEnum):
+class Tipo2(metaclass=ConstMeta):
     """
     # reserva o '0' para outros usos...
     GIL_tBIT = 1
@@ -131,7 +144,7 @@ class Tipo2(IntEnum):
     tMAX = 13
 
 
-class Er(IntEnum):
+class Er(metaclass=ConstMeta):
     er_OK = 0
     er_STRMAX = -37  # erro tamanho de string no encode_base
     er_OPER = -59  # erro de operação, está em enconde e quer usar funcao de decode ou contrário
@@ -225,3 +238,11 @@ class Er(IntEnum):
     er_62 = -64  # decode_dl_init() quer ler uma chave maior do que a total programado
     er_63 = -68  # encode_dl_init() tipo do pacote não é FULL
     er_64 = -89  # decode_key() erro ou tipo do pacote não é FULL
+    er_65 = -90  # decode_valid_map() não é modo FULL
+    er_66 = -91  # decode_valid_map() validando decode, total de chaves mapa diferentes com pacote
+    er_67 = -92  # decode_base() diferenças de paramentros de entrada no modo FULL (modo não teste)
+    er_68 = -93
+    er_69 = -94
+    er_70 = -95
+    er_71 = -96
+    er_72 = -97

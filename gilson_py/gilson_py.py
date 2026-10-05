@@ -2,40 +2,14 @@
  ============================================================================
  Name			: gilson_py
  Author			: matheus j. mella
- Version		: 0.55
- Date           : 20/01/26
+ Version		: 0.56
+ Date           : 04/10/26
  Description    : biblioteca 'gilson'
  GitHub			: https://github.com/casimirdes/gilson
  ============================================================================
-
-DATA: 30/12/2024
-    versão 0.2 do formato "gilson", com esquema de KV ala key:value, entao temos que entrar com nome da chave...
-    resalvas em comparação a lib em C, aqui não tem esquema de ponteiros/vetor em RAM e os retornos são diferentes
-    foi mantido mesmo esquema de 'struct_gilson' limitando a 'LEN_PACKS_GILSON' o tamanho por mais que aqui a RAM é gigante...
-    mas vai de utilizarmos em um ambiente micropython...
-DATA: 18/01/25
-    versão 0.3
-    separado as funcoes caso vamos utilizar no estilo KV chama funcoes especificar para
-DATA: 29/07/25
-    ajustes com base na versão 0.53 gilson_c
-DATA: 26/09/25
-    ajustes com base nas mudanças da lib em C 0.54
-DATA: 30/09/25
-    tratamento e mapeamento de erros
-    uma leve tipagem nas funções
-    uso de 'dataclasses' para organizar e tipar a struct/class principal
-    python >= 3.10 ????
-    flag para usar lib interna 'array' ou a externa 'numpy'
-DATA: 04/10/25
-    separado constantes em arquivo '_defines.py'
-    criado 'IntEnum' para proteção e organização
-    OBS: saiu um pouco do padrão das variáveis do C
-DATA: 18/01/26
-    remapeamento de nomes "GSON_" -> "GIL_"
-    ajuste em 'decode_key()'
 """
 
-FLAG_USE_NUMPY = False  # False = usa lib 'array', True = usa a lib "numpy"
+FLAG_USE_NUMPY = True  # False = usa lib 'array', True = usa a lib "numpy"
 
 if FLAG_USE_NUMPY:
     import numpy as np
@@ -50,7 +24,7 @@ from typing import Final
 from ._defines import Const, Er, Modo, Tipo1, Tipo2
 
 #GIL_DEBUG_LIB = True  # printa ou não mensagens de debug...
-GIL_DEBUG_LIB: Final[bool] = False
+#GIL_DEBUG_LIB: Final[bool] = True
 
 # constantes globais:
 # foi tudo deslocado para '_defines.py'
@@ -106,7 +80,7 @@ class StructGilson:
     size_max_pack: int = 0
 
     pos_tipo_dl_init: int = 0
-    pos_tipo_dl_end: int = 0
+    pos_tipo_dl_close: int = 0
     cont_tipo_dinamico: int = 0
     pos_bytes_dl: int = 0
 
@@ -206,6 +180,12 @@ def bytes2data(b: bytes, tipo_data, flag_form: int = 0, cont_list_a: int = 0, co
     return multi_data
 
 
+class GotoErro(Exception):
+    def __init__(self, codigo: int, sms_erro: str = ""):
+        self.codigo = codigo
+        self.sms_codigo = sms_erro
+
+
 class Gilson:
     def __init__(self):
         self.s_gil = [StructGilson() for _ in range(Const.LEN_PACKS_GILSON)]
@@ -264,14 +244,14 @@ class Gilson:
 
             self.s_gil[self.ig].ativo = True
 
-        if GIL_DEBUG_LIB:
+        if Const.GIL_DEBUG_LIB:
             print(f"DEBUG encode_init::: ig:{self.ig}, erro:{erro}, modo:{self.s_gil[self.ig].modo}, pos_bytes:{self.s_gil[self.ig].pos_bytes}, cont_itens:{self.s_gil[self.ig].cont_itens}")
 
         self.s_gil[self.ig].erro = erro
 
         return erro
 
-    def encode_end_base(self, flag_crc=True):
+    def encode_close_base(self, flag_crc=True):
         """
         // MODO ZIP: 8 bytes de offset geral:
         // [0] 1b = modo
@@ -310,8 +290,8 @@ class Gilson:
         self.s_gil[self.ig].ativo = False
         self.s_gil[self.ig].tipo_operacao = Const.e_OPER_NULL
 
-        if GIL_DEBUG_LIB:
-            print(f"DEBUG encode_end_base::: erro:{erro}, ig:{self.ig}, modo:{self.s_gil[self.ig].modo} pos_bytes:{self.s_gil[self.ig].pos_bytes}, cont_itens:{self.s_gil[self.ig].cont_itens} crc:{self.s_gil[self.ig].crc} cru:{self.s_gil[self.ig].bufw[0:8]}")
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG encode_close_base::: erro:{erro}, ig:{self.ig}, modo:{self.s_gil[self.ig].modo}, pos_bytes:{self.s_gil[self.ig].pos_bytes}, cont_itens:{self.s_gil[self.ig].cont_itens}, chaves_null:{self.s_gil[self.ig].chaves_null}, crc:{self.s_gil[self.ig].crc}, cru:{self.s_gil[self.ig].bufw[0:8]}")
 
         # retorna 3 dados: total de bytes, crc e buffer cru...
         data_return = self.s_gil[self.ig].pos_bytes, self.s_gil[self.ig].crc, bytes(self.s_gil[self.ig].bufw)  # self.s_gil[self.ig].bufw[::]
@@ -321,11 +301,11 @@ class Gilson:
 
         return data_return
 
-    def encode_end_crc(self):
-        return self.encode_end_base(True)
+    def encode_close_crc(self):
+        return self.encode_close_base(True)
 
-    def encode_end(self):
-        return self.encode_end_base(False)
+    def encode_close(self):
+        return self.encode_close_base(False)
 
     def encode_base(self, chave: int, nome_chave: str, tipo1: int, tipo2: int, valor, cont_list_a: int, cont_list_b: int, cont_list_step: int):
         erro = Er.er_OK
@@ -333,45 +313,47 @@ class Gilson:
         nbytes = tp.uint8  # padrao normalmente no C
         len_string_max = 0
 
+        """
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
             # return erro
             raise ValueError(f"erro encode_base:{erro}")
+        """
 
         try:
             if self.s_gil[self.ig].erro != Er.er_OK:
                 erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if not self.s_gil[self.ig].ativo:
                 erro = Er.er_2
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if self.s_gil[self.ig].tipo_operacao != Const.e_OPER_ENCODE:
                 erro = Er.er_OPER
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if tipo1 != 255 and tipo2 != 255:
                 if tipo1 >= Tipo1.MAX or tipo2 >= Tipo2.tMAX:
                     erro = Er.er_3
-                    goto_deu_erro()
+                    raise GotoErro(erro)
             else:
                 if self.CheckModeZIP():
                     # esquema de nulo não aceita em modo ZIP!!
                     erro = Er.er_36
-                    goto_deu_erro()
+                    raise GotoErro(erro)
 
             if chave > self.s_gil[self.ig].cont_itens:
                 erro = Er.er_58
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if self.s_gil[self.ig].cont_itens >= Const.GIL_LIMIT_KEYS:
                 erro = Er.er_4
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if self.s_gil[self.ig].cont_itens > 0 and chave <= self.s_gil[self.ig].chave_atual and self.s_gil[self.ig].tipo_dinamico==0:
                 erro = Er.er_59
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             """
             # --------------------------------------------------------------------
@@ -388,7 +370,7 @@ class Gilson:
                 len_chave = len(nome_chave_b)
                 if len_chave > Const.GIL_LIMIT_KEY_NAME:
                     erro = Er.er_5
-                    goto_deu_erro()
+                    raise GotoErro(erro)
                 else:
                     if self.CheckNotDinamic():
                         b = bytearray(len_chave + 1)
@@ -412,7 +394,7 @@ class Gilson:
                 if tipo1 == Tipo1.LIST:
                     if cont_list_a == 0:
                         erro = Er.er_6
-                        goto_deu_erro()
+                        raise GotoErro(erro)
                     vezes = cont_list_a
 
                     if self.CheckModeFULL() and self.CheckNotDinamic():
@@ -425,10 +407,10 @@ class Gilson:
                         # aqui 'cont_list_b' é tratado como uint8
                         if cont_list_b == 0:
                             erro = Er.er_7
-                            goto_deu_erro()
+                            raise GotoErro(erro)
                         elif cont_list_b > Const.GIL_LIMIT_STRING:
                             erro = Er.er_STRMAX
-                            goto_deu_erro()
+                            raise GotoErro(erro)
                         else:
                             len_string_max = cont_list_b
                             if self.CheckModeFULL() and self.CheckNotDinamic():
@@ -440,12 +422,12 @@ class Gilson:
                     if tipo2 == Tipo2.tSTRING:
                         # não testado isso ainda, vai da ruim
                         erro = Er.er_32
-                        goto_deu_erro()
+                        raise GotoErro(erro)
 
                     # aqui 'cont_list_b' é tratado como uint16
                     if cont_list_a == 0 or cont_list_b == 0 or cont_list_step == 0:
                         erro = Er.er_8
-                        goto_deu_erro()
+                        raise GotoErro(erro)
                     vezes = cont_list_a * cont_list_b  # não utiliza...
 
                     if self.CheckModeFULL() and self.CheckNotDinamic():
@@ -460,10 +442,10 @@ class Gilson:
                     if tipo2 == Tipo2.tSTRING:
                         if cont_list_a == 0:
                             erro = Er.er_9
-                            goto_deu_erro()
+                            raise GotoErro(erro)
                         elif cont_list_a > Const.GIL_LIMIT_STRING:
                             erro = Er.er_STRMAX
-                            goto_deu_erro()
+                            raise GotoErro(erro)
                         else:
                             len_string_max = cont_list_a
 
@@ -500,40 +482,13 @@ class Gilson:
                     ...  # só vai...
                 else:
                     erro = Er.er_10
-                    goto_deu_erro()
+                    raise GotoErro(erro)
 
                 if tipo2 == Tipo2.tSTRING:
                     for i in range(vezes):
                         bs = data[i].encode(encoding='utf-8')
                         bs = bytearray(bs)  # para ficar manipulavel
                         lens = len(bs)
-                        """
-                        if lens >= len_string_max:  # pode ser que veio maior que o limite
-                            lens = len_string_max  # aqui ja muda o tamanho original! melhor seria gerar um erro???
-                            # vamos ver se temos um caso de utf-8 no ultimo byte ou ascii desconhecido
-                            if bs[lens-1] > 0 and (bs[lens-1] < 32 or bs[lens-1] > 126):
-                                bs[lens - 1] = 0  # zera ele pois senao vai bugar a string
-                            ...
-                            lens = len_string_max
-                            bs = bs[0:lens]  # atualiza o buf da string
-                            bs[lens-1] = 0
-                            cont_zero = 1
-                            if bs[lens-2] > 0 and (bs[lens-2] < 32 or bs[lens-2] > 126):  # tabela ascii, se caso ficou bugado em um utf-8
-                                bs[lens - 2] = 0
-                                cont_zero = 2
-                            lens -= cont_zero
-                            bs = bs[0:lens]  # atualiza o buf da string
-        
-                        if lens <= 255:
-                            b = bytearray(lens + 1)
-                            b[0] = lens
-                            b[1::] = bs
-                            self.s_gil[self.ig].pos_bytes += (lens + 1)
-                            self.s_gil[self.ig].bufw += b
-                        else:
-                            erro = Er.er_11
-                            goto_deu_erro()
-                        """
                         if lens <= len_string_max:
                             b = bytearray(lens + 1)
                             b[0] = lens
@@ -542,7 +497,7 @@ class Gilson:
                             self.s_gil[self.ig].bufw += b
                         else:
                             erro = Er.er_11
-                            goto_deu_erro()
+                            raise GotoErro(erro)
                 elif tipo2 == Tipo2.tBIT:
                     ...  # nada ainda...
                 else:
@@ -554,47 +509,38 @@ class Gilson:
                         # logo se eu quero x[2][3] tenho que dar os offset com base nos valores máximos (250 elementos cada linha)
                         # vamos testar....
                         try:
-                            """
-                            b = np.array(data, dtype=nbytes)
-                            self.s_gil[self.ig].pos_bytes += b.nbytes
-                            self.s_gil[self.ig].bufw += b.tobytes()
-                            """
                             b = data2bytes(data, nbytes)
                             self.s_gil[self.ig].pos_bytes += b[0]
                             self.s_gil[self.ig].bufw += b[1]
                         except OverflowError:
                             erro = Er.er_OVER
-                            goto_deu_erro()
+                            raise GotoErro(erro)
 
                     else:
                         # 'data' ja está ajustado para lista e sabemos que os dados validos sao 'data[0:vezes]'
                         try:
-                            """
-                            b = np.array(data, dtype=nbytes)
-                            self.s_gil[self.ig].pos_bytes += b.nbytes
-                            self.s_gil[self.ig].bufw += b.tobytes()
-                            """
                             b = data2bytes(data, nbytes)
                             self.s_gil[self.ig].pos_bytes += b[0]
                             self.s_gil[self.ig].bufw += b[1]
                         except OverflowError:
                             erro = Er.er_OVER
-                            goto_deu_erro()
-            else:
+                            raise GotoErro(erro)
+            else:  # (tipo_mux == TIPO_GIL_NULL)  so grava o 'tipo_mux' e cai fora...
                 self.s_gil[self.ig].chaves_null += 1
 
             if erro == Er.er_OK:
                 if self.CheckNotDinamic():
                     self.s_gil[self.ig].cont_itens += 1
-            else:
-                goto_deu_erro()
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
         except Exception as err:  # except ValueError:
             #print("Erro detectado:", err)
             if erro == Er.er_OK:
                 erro = Er.er_DESC1
-                self.s_gil[self.ig].erro = erro
 
-        if GIL_DEBUG_LIB:
+        self.s_gil[self.ig].erro = erro
+        if Const.GIL_DEBUG_LIB:
             if erro != Er.er_OK:
                 print(f"DEBUG encode_base::: ig:{self.ig}, ERRO:{erro}, modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
 
@@ -747,235 +693,6 @@ class Gilson:
     def encode_mf64(self, chave: int, valor, cont_list_a: int, cont_list_b: int, cont_list_step: int):
         return self.encode_base(chave, "x", Tipo1.MTX2D, Tipo2.tFLOAT64, valor, cont_list_a, cont_list_b, cont_list_step)
 
-    def encode_dl_init(self, chave: int, tam_list: int, nitens: int):
-        erro = Er.er_OK
-
-        def goto_deu_erro():
-            self.s_gil[self.ig].erro = erro
-            if GIL_DEBUG_LIB:
-                print(f"DEBUG encode_dl_init::: ig:{self.ig}, ERRO:{erro}, modo:{self.s_gil[self.ig].modo}, chave:{chave}, tam_list:{tam_list}, nitens:{nitens}")
-            #return erro
-            raise ValueError(f"erro encode_dl_init:{erro}")
-
-        try:
-            if self.s_gil[self.ig].erro != Er.er_OK:
-                erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
-                goto_deu_erro()
-
-            if not self.s_gil[self.ig].ativo:
-                erro = Er.er_33
-                goto_deu_erro()
-
-            if self.s_gil[self.ig].tipo_dinamico == 1:
-                # já está ativo esse modo... tem que terminar antes para iniciar um novo
-                erro = Er.er_34
-                goto_deu_erro()
-
-            if chave > self.s_gil[self.ig].cont_itens:
-                # quer add uma chave maior do que a contagem crescente... não tem como
-                erro = Er.er_35
-                goto_deu_erro()
-
-            # aloca nome da chave!!! ainda não tem....
-            self.s_gil[self.ig].tipo_operacao = Const.e_OPER_ENCODE
-            self.s_gil[self.ig].tipo_dinamico = 1  # vamos tratar um tipo dinamico
-            self.s_gil[self.ig].pos_tipo_dl_init = self.s_gil[self.ig].pos_bytes
-            self.s_gil[self.ig].tam_list = tam_list
-            self.s_gil[self.ig].nitens = nitens
-            self.s_gil[self.ig].tam_list2 = 0
-            self.s_gil[self.ig].nitens2 = 0
-            self.s_gil[self.ig].cont_tipo_dinamico = 0
-
-            if self.CheckModeFULL():
-                # lembrando que no padrao normal agora viria o 'tipo_mux'
-                # 0baaabbbbb = a:tipo1, b=tipo2
-                b = bytearray(3)
-                b[0] = Const.TIPO_GIL_LDIN
-                b[1] = tam_list
-                b[2] = nitens
-                self.s_gil[self.ig].pos_bytes += 3
-                self.s_gil[self.ig].bufw += b
-            else:
-                # muita gambi para fazer funcionar... chato pacassss, um dia quem sabe...
-                erro = Er.er_63
-
-            self.s_gil[self.ig].cont_itens += 1
-
-        except Exception as err:  # except ValueError:
-            #print("Erro detectado:", err)
-            if erro == Er.er_OK:
-                erro = Er.er_DESC2
-                self.s_gil[self.ig].erro = erro
-        return erro
-
-    def valid_encode_dl(self, item: int, tipo1: int, tipo2: int, cont_list_a: int, cont_list_b: int, cont_list_step: int):
-        erro = Er.er_OK
-
-        def goto_deu_erro():
-            self.s_gil[self.ig].erro = erro
-            if GIL_DEBUG_LIB:
-                print(f"DEBUG valid_encode_dl::: ig:{self.ig}, ERRO:{erro}")
-            # return erro
-            raise ValueError(f"erro valid_encode_dl:{erro}")
-
-        try:
-            if self.s_gil[self.ig].erro != Er.er_OK:
-                erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
-                goto_deu_erro()
-
-            if self.s_gil[self.ig].tipo_dinamico == 0:
-                erro = Er.er_37
-                goto_deu_erro()
-
-            if self.s_gil[self.ig].tipo_operacao != Const.e_OPER_ENCODE:
-                erro = Er.er_OPER
-                goto_deu_erro()
-
-            if tipo1 >= Tipo1.MAX:
-                erro = Er.er_38
-                goto_deu_erro()
-
-            if tipo2 >= Tipo2.tMAX:
-                erro = Er.er_38b
-                goto_deu_erro()
-
-            if item > self.s_gil[self.ig].nitens:
-                # quer add uma item maior do que a contagem crescente... não tem como
-                erro = Er.er_39
-                goto_deu_erro()
-
-            if tipo1 == Tipo1.LIST:
-                if cont_list_a == 0:
-                    erro = Er.er_40
-                    goto_deu_erro()
-                if tipo2==Tipo2.tSTRING:
-                    if cont_list_b == 0:
-                        erro = Er.er_41
-                        goto_deu_erro()
-            elif tipo1 == Tipo1.MTX2D:
-                if tipo2 == Tipo2.tSTRING:
-                    # não testado isso ainda, vai da ruim
-                    erro = Er.er_42
-                    goto_deu_erro()
-                if cont_list_a == 0 or cont_list_b == 0 or cont_list_step == 0:
-                    erro = Er.er_43
-                    goto_deu_erro()
-            else:  # Tipo1.SINGLE
-                if tipo2 == Tipo2.tSTRING:
-                    if cont_list_a == 0:
-                        erro = Er.er_44
-                        goto_deu_erro()
-
-        except Exception as err:  # except ValueError:
-            #print("Erro detectado:", err)
-            if erro == Er.er_OK:
-                erro = Er.er_DESC3
-                self.s_gil[self.ig].erro = erro
-        return erro
-
-    def encode_dl_add(self, item: int, tipo1: int, tipo2: int, cont_list_a: int, cont_list_b: int, cont_list_step: int):
-        erro = Er.er_OK
-
-        def goto_deu_erro():
-            self.s_gil[self.ig].erro = erro
-            if GIL_DEBUG_LIB:
-                print(f"DEBUG encode_dl_add::: ig:{self.ig}, ERRO:{erro}")
-            # return erro
-            raise ValueError(f"erro encode_dl_add:{erro}")
-
-        try:
-            erro = self.valid_encode_dl(item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step)
-            if erro != Er.er_OK:
-                goto_deu_erro()
-
-            # 0baaabbbbb = a:tipo1, b=tipo2
-            tipo_mux = tipo1 << 5
-            tipo_mux |= tipo2
-
-            if self.CheckModeFULL():
-                b = bytearray(1)
-                b[0] = tipo_mux
-                self.s_gil[self.ig].pos_bytes += 1
-                self.s_gil[self.ig].bufw += b
-
-            if tipo1 == Tipo1.LIST:
-                if self.CheckModeFULL():
-                    b = bytearray(2)
-                    b[0:2] = struct.pack("H", cont_list_a)
-                    self.s_gil[self.ig].pos_bytes += 2
-                    self.s_gil[self.ig].bufw += b
-                if tipo2 == Tipo2.tSTRING:
-                    # aqui 'cont_list_b' é tratado como uint8
-                    if self.CheckModeFULL():
-                        b = bytearray(1)
-                        b[0] = cont_list_b
-                        self.s_gil[self.ig].pos_bytes += 1
-                        self.s_gil[self.ig].bufw += b
-            elif tipo1 == Tipo1.MTX2D:
-               if self.CheckModeFULL():
-                   b = bytearray(5)
-                   b[0] = cont_list_a & 0xff
-                   b[1:3] = struct.pack("H", cont_list_b)
-                   b[3:5] = struct.pack("H", cont_list_step)
-                   self.s_gil[self.ig].pos_bytes += 5
-                   self.s_gil[self.ig].bufw += b
-            else:  # Tipo1.SINGLE
-                pass
-
-        except Exception as err:  # except ValueError:
-            #print("Erro detectado:", err)
-            if erro == Er.er_OK:
-                erro = Er.er_DESC4
-                self.s_gil[self.ig].erro = erro
-        return erro
-
-    def encode_dl_data(self, item: int, tipo1: int, tipo2: int, valor, cont_list_a: int, cont_list_b: int, cont_list_step: int):
-        erro = Er.er_OK
-
-        def goto_deu_erro():
-            self.s_gil[self.ig].erro = erro
-            if GIL_DEBUG_LIB:
-                print(f"DEBUG encode_dl_data::: ig:{self.ig}, ERRO:{erro}, item:{item}")
-            # return erro
-            raise ValueError(f"erro encode_dl_data:{erro}")
-
-        try:
-            erro = self.valid_encode_dl(item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step)
-            if erro != Er.er_OK:
-                goto_deu_erro()
-
-            # os 2 primeiro: 'chave', 'nome_chave' não usamos aquiii vai ser ignorados devido 's_gil[ig].tipo_dinamico'
-            erro = self.encode_base(0, "x", tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step)
-
-            if erro == Er.er_OK:
-                self.s_gil[self.ig].cont_tipo_dinamico += 1
-            else:
-                goto_deu_erro()
-
-        except Exception as err:  # except ValueError:
-            #print("Erro detectado:", err)
-            if erro == Er.er_OK:
-                erro = Er.er_DESC5
-                self.s_gil[self.ig].erro = erro
-        return erro
-
-    def encode_dl_end(self):
-        erro = Er.er_OK
-
-        if self.s_gil[self.ig].tipo_dinamico == 0:
-            erro = Er.er_45
-        elif self.s_gil[self.ig].tipo_operacao != Const.e_OPER_ENCODE:
-            erro = Er.er_OPER
-        elif self.s_gil[self.ig].cont_tipo_dinamico != (self.s_gil[self.ig].tam_list * self.s_gil[self.ig].nitens):
-            erro = Er.er_46
-
-        self.s_gil[self.ig].tipo_dinamico = 0  # finalizando o tratar um tipo dinamico
-
-        if GIL_DEBUG_LIB:
-            print(f"DEBUG encode_dl_end::: ig:{self.ig}, ERRO:{erro}, modo:{self.s_gil[self.ig].modo}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}, cont_tipo_dinamico:{self.s_gil[self.ig].cont_tipo_dinamico}")
-
-        return erro
-
     def encode_mapfix(self, mapa: list | tuple, *args):
         """
         'map' pode ter até 6 'uint16_t'
@@ -1112,8 +829,269 @@ class Gilson:
             self.s_gil[self.ig].erro = erro
             return erro
 
+        # tipo1 e tipo2 = 255, vai resultar no Const.TIPO_GIL_NULL
         return self.encode_base(chave, nome_chave, 255, 255, 0, 0, 0, 0)
 
+    def valid_encode_dl(self, item: int, tipo1: int, tipo2: int, cont_list_a: int, cont_list_b: int, cont_list_step: int):
+        erro = Er.er_OK
+
+        """
+        def goto_deu_erro():
+            self.s_gil[self.ig].erro = erro
+            if Const.GIL_DEBUG_LIB:
+                print(f"DEBUG valid_encode_dl::: ig:{self.ig}, ERRO:{erro}")
+            # return erro
+            raise ValueError(f"erro valid_encode_dl:{erro}")
+        """
+
+        try:
+            if self.s_gil[self.ig].erro != Er.er_OK:
+                erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
+                raise GotoErro(erro)
+
+            if self.s_gil[self.ig].tipo_dinamico == 0:
+                erro = Er.er_37
+                raise GotoErro(erro)
+
+            if self.s_gil[self.ig].tipo_operacao != Const.e_OPER_ENCODE:
+                erro = Er.er_OPER
+                raise GotoErro(erro)
+
+            if tipo1 >= Tipo1.MAX:
+                erro = Er.er_38
+                raise GotoErro(erro)
+
+            if tipo2 >= Tipo2.tMAX:
+                erro = Er.er_38b
+                raise GotoErro(erro)
+
+            if item > self.s_gil[self.ig].nitens:
+                # quer add uma item maior do que a contagem crescente... não tem como
+                erro = Er.er_39
+                raise GotoErro(erro)
+
+            if tipo1 == Tipo1.LIST:
+                if cont_list_a == 0:
+                    erro = Er.er_40
+                    raise GotoErro(erro)
+                if tipo2==Tipo2.tSTRING:
+                    if cont_list_b == 0:
+                        erro = Er.er_41
+                        raise GotoErro(erro)
+            elif tipo1 == Tipo1.MTX2D:
+                if tipo2 == Tipo2.tSTRING:
+                    # não testado isso ainda, vai da ruim
+                    erro = Er.er_42
+                    raise GotoErro(erro)
+                if cont_list_a == 0 or cont_list_b == 0 or cont_list_step == 0:
+                    erro = Er.er_43
+                    raise GotoErro(erro)
+            else:  # Tipo1.SINGLE
+                if tipo2 == Tipo2.tSTRING:
+                    if cont_list_a == 0:
+                        erro = Er.er_44
+                        raise GotoErro(erro)
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
+        except Exception as err:  # except ValueError:
+            #print("Erro detectado:", err)
+            if erro == Er.er_OK:
+                erro = Er.er_DESC3
+
+        self.s_gil[self.ig].erro = erro
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG valid_encode_dl::: ig:{self.ig}, ERRO:{erro}")
+
+        return erro
+
+    def encode_dl_init(self, chave: int, tam_list: int, nitens: int):
+        erro = Er.er_OK
+
+        """
+        def goto_deu_erro():
+            self.s_gil[self.ig].erro = erro
+            #return erro
+            raise ValueError(f"erro encode_dl_init:{erro}")
+        """
+        try:
+            if self.s_gil[self.ig].erro != Er.er_OK:
+                erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
+                raise GotoErro(erro)
+
+            if not self.s_gil[self.ig].ativo:
+                erro = Er.er_33
+                raise GotoErro(erro)
+
+            if self.s_gil[self.ig].tipo_dinamico == 1:
+                # já está ativo esse modo... tem que terminar antes para iniciar um novo
+                erro = Er.er_34
+                raise GotoErro(erro)
+
+            if chave > self.s_gil[self.ig].cont_itens:
+                # quer add uma chave maior do que a contagem crescente... não tem como
+                erro = Er.er_35
+                raise GotoErro(erro)
+
+            # aloca nome da chave!!! ainda não tem....
+            self.s_gil[self.ig].tipo_operacao = Const.e_OPER_ENCODE
+            self.s_gil[self.ig].tipo_dinamico = 1  # vamos tratar um tipo dinamico
+            self.s_gil[self.ig].pos_tipo_dl_init = self.s_gil[self.ig].pos_bytes
+            self.s_gil[self.ig].tam_list = tam_list
+            self.s_gil[self.ig].nitens = nitens
+            self.s_gil[self.ig].tam_list2 = 0
+            self.s_gil[self.ig].nitens2 = 0
+            self.s_gil[self.ig].cont_tipo_dinamico = 0
+
+            if self.CheckModeFULL():
+                # lembrando que no padrao normal agora viria o 'tipo_mux'
+                # 0baaabbbbb = a:tipo1, b=tipo2
+                b = bytearray(3)
+                b[0] = Const.TIPO_GIL_LDIN
+                b[1] = tam_list
+                b[2] = nitens
+                self.s_gil[self.ig].pos_bytes += 3
+                self.s_gil[self.ig].bufw += b
+            else:
+                # muita gambi para fazer funcionar... chato pacassss, um dia quem sabe...
+                erro = Er.er_63
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
+        except Exception as err:  # except ValueError:
+            #print("Erro detectado:", err)
+            if erro == Er.er_OK:
+                erro = Er.er_DESC2
+
+        if erro == Er.er_OK:
+            self.s_gil[self.ig].cont_itens += 1
+
+        self.s_gil[self.ig].erro = erro
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG encode_dl_init::: ig:{self.ig}, ERRO:{erro}, modo:{self.s_gil[self.ig].modo}, chave:{chave}, tam_list:{tam_list}, nitens:{nitens}")
+
+        return erro
+
+    def encode_dl_add_item(self, item: int, tipo1: int, tipo2: int, cont_list_a: int, cont_list_b: int, cont_list_step: int):
+        erro = Er.er_OK
+
+        """
+        def goto_deu_erro():
+            self.s_gil[self.ig].erro = erro
+            if Const.GIL_DEBUG_LIB:
+                print(f"DEBUG encode_dl_add::: ig:{self.ig}, ERRO:{erro}")
+            # return erro
+            raise ValueError(f"erro encode_dl_add:{erro}")
+        """
+
+        try:
+            erro = self.valid_encode_dl(item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step)
+            if erro != Er.er_OK:
+                raise GotoErro(erro)
+
+            # 0baaabbbbb = a:tipo1, b=tipo2
+            tipo_mux = tipo1 << 5
+            tipo_mux |= tipo2
+
+            if self.CheckModeFULL():
+                b = bytearray(1)
+                b[0] = tipo_mux
+                self.s_gil[self.ig].pos_bytes += 1
+                self.s_gil[self.ig].bufw += b
+
+            if tipo1 == Tipo1.LIST:
+                if self.CheckModeFULL():
+                    b = bytearray(2)
+                    b[0:2] = struct.pack("H", cont_list_a)
+                    self.s_gil[self.ig].pos_bytes += 2
+                    self.s_gil[self.ig].bufw += b
+                if tipo2 == Tipo2.tSTRING:
+                    # aqui 'cont_list_b' é tratado como uint8
+                    if self.CheckModeFULL():
+                        b = bytearray(1)
+                        b[0] = cont_list_b
+                        self.s_gil[self.ig].pos_bytes += 1
+                        self.s_gil[self.ig].bufw += b
+            elif tipo1 == Tipo1.MTX2D:
+               if self.CheckModeFULL():
+                   b = bytearray(5)
+                   b[0] = cont_list_a & 0xff
+                   b[1:3] = struct.pack("H", cont_list_b)
+                   b[3:5] = struct.pack("H", cont_list_step)
+                   self.s_gil[self.ig].pos_bytes += 5
+                   self.s_gil[self.ig].bufw += b
+            else:  # Tipo1.SINGLE
+                pass
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
+        except Exception as err:  # except ValueError:
+            #print("Erro detectado:", err)
+            if erro == Er.er_OK:
+                erro = Er.er_DESC4
+
+        self.s_gil[self.ig].erro = erro
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG encode_dl_add::: ig:{self.ig}, ERRO:{erro}")
+
+        return erro
+
+    def encode_dl_add_data(self, item: int, tipo1: int, tipo2: int, valor, cont_list_a: int, cont_list_b: int, cont_list_step: int):
+        erro = Er.er_OK
+
+        """
+        def goto_deu_erro():
+            self.s_gil[self.ig].erro = erro
+            if Const.GIL_DEBUG_LIB:
+                print(f"DEBUG encode_dl_data::: ig:{self.ig}, ERRO:{erro}, item:{item}")
+            # return erro
+            raise ValueError(f"erro encode_dl_data:{erro}")
+        """
+
+        try:
+            erro = self.valid_encode_dl(item, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step)
+            if erro != Er.er_OK:
+                raise GotoErro(erro)
+
+            # os 2 primeiro: 'chave', 'nome_chave' não usamos aquiii vai ser ignorados devido 's_gil[ig].tipo_dinamico'
+            erro = self.encode_base(0, "x", tipo1, tipo2, valor, cont_list_a, cont_list_b, cont_list_step)
+
+            if erro == Er.er_OK:
+                self.s_gil[self.ig].cont_tipo_dinamico += 1
+            else:
+                raise GotoErro(erro)
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
+        except Exception as err:  # except ValueError:
+            #print("Erro detectado:", err)
+            if erro == Er.er_OK:
+                erro = Er.er_DESC5
+
+        self.s_gil[self.ig].erro = erro
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG encode_dl_data::: ig:{self.ig}, ERRO:{erro}, item:{item}")
+
+        return erro
+
+    def encode_dl_close(self):
+        erro = Er.er_OK
+
+        if self.s_gil[self.ig].erro != Er.er_OK:
+            erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
+        elif self.s_gil[self.ig].tipo_dinamico == 0:
+            erro = Er.er_45
+        elif self.s_gil[self.ig].tipo_operacao != Const.e_OPER_ENCODE:
+            erro = Er.er_OPER
+        elif self.s_gil[self.ig].cont_tipo_dinamico != (self.s_gil[self.ig].tam_list * self.s_gil[self.ig].nitens):
+            erro = Er.er_46
+
+        self.s_gil[self.ig].tipo_dinamico = 0  # finalizando o tratar um tipo dinamico
+
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG encode_dl_close::: ig:{self.ig}, ERRO:{erro}, modo:{self.s_gil[self.ig].modo}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}, cont_tipo_dinamico:{self.s_gil[self.ig].cont_tipo_dinamico}")
+
+        return erro
     # ====================================================================================================================
     # ====================================================================================================================
     # ====================================================================================================================
@@ -1137,7 +1115,7 @@ class Gilson:
         if erro == Er.er_OK:
             self.s_gil[self.ig].clear()  # limpa estrutura geral antes de iniciar um novo ciclo de decode
             self.s_gil[self.ig].tipo_operacao = Const.e_OPER_DECODE
-            self.s_gil[self.ig].bufr = data_cru
+            self.s_gil[self.ig].bufr = bytearray(data_cru)  # força virar um 'bytearray'
             self.s_gil[self.ig].modo = self.s_gil[self.ig].bufr[0]
 
             if self.s_gil[self.ig].modo < Modo.MAX:
@@ -1166,8 +1144,8 @@ class Gilson:
 
         self.s_gil[self.ig].erro = erro
 
-        if GIL_DEBUG_LIB:
-            print(f"DEBUG gilson_get_init::: ig:{self.ig}, erro:{erro},  modo:{self.s_gil[self.ig].modo},  pos_bytes:{self.s_gil[self.ig].pos_bytes},  cont_itens:{self.s_gil[self.ig].cont_itens}, cru:{self.s_gil[self.ig].bufr[0:8]}, crc:{crc1}=={crc2},  pos_bytes2:{self.s_gil[self.ig].pos_bytes2}  cont_itens2:{self.s_gil[self.ig].cont_itens2}")
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG decode_init::: ig:{self.ig}, erro:{erro},  modo:{self.s_gil[self.ig].modo},  pos_bytes:{self.s_gil[self.ig].pos_bytes},  cont_itens:{self.s_gil[self.ig].cont_itens}, cru:{self.s_gil[self.ig].bufr[0:8]}, crc:{crc1}=={crc2},  pos_bytes2:{self.s_gil[self.ig].pos_bytes2}  cont_itens2:{self.s_gil[self.ig].cont_itens2}")
 
         return erro, modo
 
@@ -1176,10 +1154,14 @@ class Gilson:
         self.s_gil[self.ig].clear()
         return erro
 
-    def decode_end_base(self, flag_crc=True):
+    def decode_close_base(self, flag_crc=True):
         erro = Er.er_OK
 
-        if self.s_gil[self.ig].erro == Er.er_OK:
+        if self.s_gil[self.ig].erro != Er.er_OK:
+            erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
+        elif self.s_gil[self.ig].tipo_operacao != Const.e_OPER_DECODE:
+            erro = Er.er_OPER
+        else:
             if self.CheckModeFULL():
                 # self.s_gil[self.ig].crc_out ja foi calculado em 'gilson_decode_init()'
                 if self.s_gil[self.ig].pos_bytes != self.s_gil[self.ig].pos_bytes2 and self.s_gil[self.ig].cont_itens == self.s_gil[self.ig].cont_itens2:
@@ -1196,13 +1178,9 @@ class Gilson:
                     self.s_gil[self.ig].crc_out = 0
             self.s_gil[self.ig].ativo = False
             self.s_gil[self.ig].tipo_operacao = Const.e_OPER_NULL
-        elif self.s_gil[self.ig].tipo_operacao != Const.e_OPER_DECODE:
-            erro = Er.er_OPER
-        else:
-            erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
 
-        if GIL_DEBUG_LIB:
-            print(f"DEBUG gilson_get_end::: ig:{self.ig}, erro:{erro}, modo:{self.s_gil[self.ig].modo}, pos_bytes:{self.s_gil[self.ig].pos_bytes}=={self.s_gil[self.ig].pos_bytes2}, cont_itens:{self.s_gil[self.ig].cont_itens}=={self.s_gil[self.ig].cont_itens2}, crc_out:{self.s_gil[self.ig].crc_out}")
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG decode_close_base::: ig:{self.ig}, erro:{erro}, modo:{self.s_gil[self.ig].modo}, pos_bytes:{self.s_gil[self.ig].pos_bytes}=={self.s_gil[self.ig].pos_bytes2}, cont_itens:{self.s_gil[self.ig].cont_itens}=={self.s_gil[self.ig].cont_itens2}, crc_out:{self.s_gil[self.ig].crc_out}, chaves_null:{self.s_gil[self.ig].chaves_null}")
 
         # retorna: erro, total de bytes, crc e buffer cru...
         data_return = erro, self.s_gil[self.ig].pos_bytes, self.s_gil[self.ig].crc_out, bytes(self.s_gil[self.ig].bufr)
@@ -1215,63 +1193,74 @@ class Gilson:
 
         return data_return
 
-    def decode_end_crc(self):
-        return self.decode_end_base(True)
+    def decode_close_crc(self):
+        return self.decode_close_base(True)
 
-    def decode_end(self):
-        return self.decode_end_base(False)
+    def decode_close(self):
+        return self.decode_close_base(False)
 
-    def decode_base(self, chave: int, tipo1: int, tipo2: int, cont_list_a: int, cont_list_b: int, cont_list_step: int):
+    def decode_base(self, chave: int, tipo1: int, tipo2: int, cont_list_a: int, cont_list_b: int, cont_list_step: int, test_valor: int = 0):
         erro = Er.er_OK
         vezes = 1
         nbytes = tp.uint8  # padrao normalmente no C
         nbytes2 = 1
         multi_data = None
         nome_chave = f"{chave}"  # ja assumo como padrão caso não utilize
+        tipo_muxX = 0
+        tipo1X = 255
+        tipo2X = 255
+        cont_list_aX = 0
+        cont_list_bX = 0
+        cont_list_stepX = 0
 
+        """
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
             if erro != 0:
-                if GIL_DEBUG_LIB:
-                    print(f"DEBUG gilson_get_data::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
+                if Const.GIL_DEBUG_LIB:
+                    print(f"DEBUG decode_base::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
             raise ValueError(f"erro encode_base:{erro}")
+        """
 
         try:
             if self.s_gil[self.ig].erro != Er.er_OK:
                 erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if not self.s_gil[self.ig].ativo:
                 erro = Er.er_17
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if self.s_gil[self.ig].tipo_operacao != Const.e_OPER_DECODE:
                 erro = Er.er_OPER
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if tipo1 >= Tipo1.MAX:
                 erro = Er.er_18
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if tipo2 >= Tipo2.tMAX:
                 erro = Er.er_18b
-                goto_deu_erro()
-
-            if chave > self.s_gil[self.ig].cont_itens:
-                # quer add uma chave maior do que a contagem crescente...
-                # vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GIL_MODO_FULL'!!!
-                erro = Er.er_19
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if chave >= self.s_gil[self.ig].cont_itens2:
                 # quer ler uma chave maior do que a total programado
-                erro = Er.er_60
-                goto_deu_erro()
+                if Const.GIL_FLAG_NEW_KEY:
+                    # aqui não vamos 'limpar' a parte da nova chave como faz no C, apenas cai fora...
+                    raise GotoErro(erro)
+                else:
+                    erro = Er.er_60
+                    raise GotoErro(erro)
+
+            if chave > self.s_gil[self.ig].cont_itens:
+                # quer ler uma chave maior do que a contagem crescente...
+                erro = Er.er_19
+                raise GotoErro(erro)
 
             if self.s_gil[self.ig].cont_itens>0 and chave <= self.s_gil[self.ig].chave_atual and self.s_gil[self.ig].tipo_dinamico==0:
                 # chave ja foi adicionada no decode
                 erro = Er.er_61
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if self.CheckModeKV():
                 # nome da chave
@@ -1283,122 +1272,150 @@ class Gilson:
                 # len vai ser menor que 'GIL_LIMIT_KEY_NAME' caracteres...
 
             if self.CheckModeFULL():
-                # tipo_mux = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes] == tipo_mux
+                tipo_muxX = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
                 self.s_gil[self.ig].pos_bytes += 1
+                tipo1X = tipo_muxX >> 5
+                tipo2X = tipo_muxX & 0b11111
 
-            if tipo1 == Tipo1.LIST:
-                if cont_list_a == 0:
-                    erro = Er.er_20
-                    goto_deu_erro()
-                vezes = cont_list_a
+            if tipo_muxX != Const.TIPO_GIL_NULL:
+                # ----------------------------------------------------------------------------------
+                if tipo1 == Tipo1.LIST:
+                    if cont_list_a == 0:
+                        erro = Er.er_20
+                        raise GotoErro(erro)
+                    vezes = cont_list_a
 
-                if self.CheckModeFULL():
-                    #vezes = struct.unpack("H", self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes: self.s_gil[self.ig].pos_bytes + 2])[0]
-                    self.s_gil[self.ig].pos_bytes += 2
+                    if self.CheckModeFULL():
+                        cont_list_aX = struct.unpack("H", self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes: self.s_gil[self.ig].pos_bytes + 2])[0]
+                        self.s_gil[self.ig].pos_bytes += 2
 
-                if tipo2 == Tipo2.tSTRING:
-                    if cont_list_b == 0:
-                        erro = Er.er_21
-                        goto_deu_erro()
+                    if tipo2 == Tipo2.tSTRING:
+                        if cont_list_b == 0:
+                            erro = Er.er_21
+                            raise GotoErro(erro)
+                        else:
+                            if self.CheckModeFULL():
+                                cont_list_bX = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
+                                self.s_gil[self.ig].pos_bytes += 1
+                elif tipo1 == Tipo1.MTX2D:
+                    if cont_list_a == 0 or cont_list_b == 0 or cont_list_step == 0:
+                        erro = Er.er_22
+                        raise GotoErro(erro)
                     else:
                         if self.CheckModeFULL():
-                            # cont_list_b = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
+                            cont_list_aX = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
                             self.s_gil[self.ig].pos_bytes += 1
-            elif tipo1 == Tipo1.MTX2D:
-                if cont_list_a == 0 or cont_list_b == 0 or cont_list_step == 0:
-                    erro = Er.er_22
-                    goto_deu_erro()
+                            cont_list_bX = struct.unpack("H", self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes: self.s_gil[self.ig].pos_bytes + 2])[0]
+                            self.s_gil[self.ig].pos_bytes += 2
+                            cont_list_stepX = struct.unpack("H", self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes: self.s_gil[self.ig].pos_bytes + 2])[0]
+                            self.s_gil[self.ig].pos_bytes += 2
+                    vezes = cont_list_a * cont_list_b  # no python fizemos assim pois salva exato o que temos e não é baseado em 'cont_list_step' como no C
+                else:  # Tipo1.SINGLE
+                    vezes = 1
+                # ----------------------------------------------------------------------------------
+
+                # aqui em 'gilson_decode_data_base()' quem manda é os parâmetros de entrada que são todos constantes!!! tipo1, tipo2, cont_list_a, cont_list_b e cont_list_step
+                # mas se é um tipo FULL, quem manda é os valores do pacote e não os parâmetros de entrada, salvo se esses batem exatamente com os do pacote
+                if self.CheckModeFULL():
+                    if tipo1 != tipo1X or tipo2 != tipo2X or (tipo1 != Tipo1.SINGLE and cont_list_a < cont_list_aX) or cont_list_b < cont_list_bX or cont_list_step < cont_list_stepX:
+                        erro = Er.er_67
+                        raise GotoErro(erro)
                 else:
-                    if self.CheckModeFULL():
-                        # cont_list_a = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
+                    # MODO ZIP!!!!!
+                    tipo1X = tipo1
+                    tipo2X = tipo2
+                    cont_list_aX = cont_list_a
+                    cont_list_bX = cont_list_b
+                    cont_list_stepX = cont_list_step
+
+                if tipo1X == Tipo1.LIST:
+                    vezes = cont_list_aX
+                elif tipo1X == Tipo1.MTX2D:
+                    vezes = cont_list_aX * cont_list_bX
+
+                # ----------------------------------------------------------------------------------
+                if tipo2X == Tipo2.tBIT:
+                    ...  # nada ainda...
+                elif tipo2X == Tipo2.tINT8:
+                    nbytes = tp.int8
+                    nbytes2 = 1
+                elif tipo2X == Tipo2.tUINT8:
+                    nbytes = tp.uint8
+                    nbytes2 = 1
+                elif tipo2X == Tipo2.tINT16:
+                    nbytes = tp.int16
+                    nbytes2 = 2
+                elif tipo2X == Tipo2.tUINT16:
+                    nbytes = tp.uint16
+                    nbytes2 = 2
+                elif tipo2X == Tipo2.tINT32:
+                    nbytes = tp.int32
+                    nbytes2 = 4
+                elif tipo2X == Tipo2.tUINT32:
+                    nbytes = tp.uint32
+                    nbytes2 = 4
+                elif tipo2X == Tipo2.tINT64:
+                    nbytes = tp.int64
+                    nbytes2 = 8
+                elif tipo2X == Tipo2.tUINT64:
+                    nbytes = tp.uint64
+                    nbytes2 = 8
+                elif tipo2X == Tipo2.tFLOAT32:
+                    nbytes = tp.float32
+                    nbytes2 = 4
+                elif tipo2X == Tipo2.tFLOAT64:
+                    nbytes = tp.float64
+                    nbytes2 = 8
+                elif tipo2X == Tipo2.tSTRING:
+                    ...  # só vai...
+                else:
+                    erro = Er.er_23
+                    raise GotoErro(erro)
+                # ----------------------------------------------------------------------------------
+
+                # ----------------------------------------------------------------------------------
+                if tipo2X == Tipo2.tSTRING:
+                    multi_data = []
+                    for i in range(vezes):
+                        lens = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
                         self.s_gil[self.ig].pos_bytes += 1
-                        # cont_list_b = struct.unpack("H", self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes: self.s_gil[self.ig].pos_bytes + 2])[0]
-                        self.s_gil[self.ig].pos_bytes += 2
-                        # cont_list_step = struct.unpack("H", self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes: self.s_gil[self.ig].pos_bytes + 2])[0]
-                        self.s_gil[self.ig].pos_bytes += 2
-                vezes = cont_list_a * cont_list_b
-            else:  # Tipo1.SINGLE
-                vezes = 1
-
-            if tipo2 == Tipo2.tBIT:
-                ...  # nada ainda...
-            elif tipo2 == Tipo2.tINT8:
-                nbytes = tp.int8
-                nbytes2 = 1
-            elif tipo2 == Tipo2.tUINT8:
-                nbytes = tp.uint8
-                nbytes2 = 1
-            elif tipo2 == Tipo2.tINT16:
-                nbytes = tp.int16
-                nbytes2 = 2
-            elif tipo2 == Tipo2.tUINT16:
-                nbytes = tp.uint16
-                nbytes2 = 2
-            elif tipo2 == Tipo2.tINT32:
-                nbytes = tp.int32
-                nbytes2 = 4
-            elif tipo2 == Tipo2.tUINT32:
-                nbytes = tp.uint32
-                nbytes2 = 4
-            elif tipo2 == Tipo2.tINT64:
-                nbytes = tp.int64
-                nbytes2 = 8
-            elif tipo2 == Tipo2.tUINT64:
-                nbytes = tp.uint64
-                nbytes2 = 8
-            elif tipo2 == Tipo2.tFLOAT32:
-                nbytes = tp.float32
-                nbytes2 = 4
-            elif tipo2 == Tipo2.tFLOAT64:
-                nbytes = tp.float64
-                nbytes2 = 8
-            elif tipo2 == Tipo2.tSTRING:
-                ...  # só vai...
-            else:
-                erro = Er.er_23
-                goto_deu_erro()
-
-            if tipo2 == Tipo2.tSTRING:
-                multi_data = []
-                for i in range(vezes):
-                    lens = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
-                    self.s_gil[self.ig].pos_bytes += 1
-                    data = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + lens]
-                    self.s_gil[self.ig].pos_bytes += lens
-                    multi_data.append(data.decode(encoding='utf-8'))
-            elif tipo2 == Tipo2.tBIT:
-                ...  # nada ainda...
-            else:
-                # para o resto é só varer bytes
-                if tipo1 == Tipo1.MTX2D:
-                    lenb = vezes * nbytes2
-                    b = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + lenb]
-                    self.s_gil[self.ig].pos_bytes += lenb
-                    """
-                    data = np.frombuffer(b, dtype=nbytes)
-                    data = data.reshape((cont_list_a, cont_list_b))
-                    multi_data = data.tolist()
-                    """
-                    multi_data = bytes2data(b, nbytes, 1, cont_list_a, cont_list_b)
+                        data = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + lens]
+                        self.s_gil[self.ig].pos_bytes += lens
+                        multi_data.append(data.decode(encoding='utf-8'))
+                elif tipo2X == Tipo2.tBIT:
+                    ...  # nada ainda...
                 else:
-                    lenb = vezes * nbytes2
-                    b = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + lenb]
-                    self.s_gil[self.ig].pos_bytes += lenb
-                    """
-                    data = np.frombuffer(b, dtype=nbytes)
-                    multi_data = data.tolist()
-                    """
-                    multi_data = bytes2data(b, nbytes)
+                    # para o resto é só varer bytes
+                    if tipo1X == Tipo1.MTX2D:
+                        lenb = vezes * nbytes2
+                        b = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + lenb]
+                        self.s_gil[self.ig].pos_bytes += lenb
+                        multi_data = bytes2data(b, nbytes, 1, cont_list_a, cont_list_b)
+                    else:
+                        lenb = vezes * nbytes2
+                        b = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + lenb]
+                        self.s_gil[self.ig].pos_bytes += lenb
+                        multi_data = bytes2data(b, nbytes)
+                # ----------------------------------------------------------------------------------
 
-            if erro == Er.er_OK:
-                self.s_gil[self.ig].cont_itens += 1
-                if vezes == 1 and tipo1 == Tipo1.SINGLE:
-                    multi_data = multi_data[0]
+                if erro == Er.er_OK:
+                    self.s_gil[self.ig].cont_itens += 1
+                    if vezes == 1 and tipo1X == Tipo1.SINGLE:
+                        multi_data = multi_data[0]
+            else:
+                self.s_gil[self.ig].chaves_null += 1  # temos chaves nulas, vai incrementando para análise final
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
         except Exception as err:  # except ValueError:
             #print("Erro detectado:", err)
             if erro == Er.er_OK:
                 erro = Er.er_DESC6
-                self.s_gil[self.ig].erro = erro
+
+        self.s_gil[self.ig].erro = erro
+        if erro != 0:
+            if Const.GIL_DEBUG_LIB:
+                print(f"DEBUG decode_base::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
 
         if self.CheckModeKV():
             ret = erro, nome_chave, multi_data
@@ -1416,48 +1433,61 @@ class Gilson:
         tipo_mux, tipo1, tipo2 = 0, 255, 255
         cont_list_a, cont_list_b, cont_list_step = 0, 0, 0
         nome_chave = f"{chave}"  # ja assumo como padrão caso não utilize
-
+        flag_mesmo = False
         #print("decode_base_full...")
 
+        """
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
             if erro != Er.er_OK:
-                if GIL_DEBUG_LIB:
+                if Const.GIL_DEBUG_LIB:
                     print(f"DEBUG decode_base_full::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
             raise ValueError(f"erro encode_base:{erro}")
+        """
 
         try:
             if self.s_gil[self.ig].erro != Er.er_OK:
                 erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if not self.s_gil[self.ig].ativo:
                 erro = Er.er_24
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if self.s_gil[self.ig].tipo_operacao != Const.e_OPER_DECODE:
                 erro = Er.er_OPER
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if not self.CheckModeFULL():
                 erro = Er.er_25
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if chave > self.s_gil[self.ig].cont_itens2:
                 # quer ler uma chave maior do que a contagem total
-                # vamos varrer todas as chaves até achar a 'chave' desejada mas só funciona no modo 'GIL_MODO_FULL'!!!
-                erro = Er.er_26
-                goto_deu_erro()
+                # depende do flag 'GIL_FLAG_NEW_KEY'
+                if Const.GIL_FLAG_NEW_KEY:
+                    # aqui não vamos 'limpar' a parte da nova chave como faz no C, apenas cai fora...
+                    raise GotoErro(erro)
+                else:
+                    erro = Er.er_26
+                    raise GotoErro(erro)
+
+            if self.CheckNotDinamic():
+                if self.s_gil[self.ig].cont_itens > 0 and chave == self.s_gil[self.ig].chave_atual:
+                    # quer ler a mesma chave porem ja deu os offsets..
+                    flag_mesmo = True
 
             cont_loop_erro = 0
             while True:
+                #print(f"0 chave:{chave}, chave_atual:{self.s_gil[self.ig].chave_atual}, bypass:{bypass}, cont_itens:{self.s_gil[self.ig].cont_itens}")
                 if chave > self.s_gil[self.ig].cont_itens:
                     # quer ler uma chave maior do que a contagem crescente... temos que ir para frente...
                     # vai iniciar de onde parou até achar o que queremos
                     bypass = 1
-                elif chave < self.s_gil[self.ig].chave_atual:
+                elif chave < self.s_gil[self.ig].chave_atual or flag_mesmo == True:
                     # quer ler uma chave menor, que ja foi lida e/u passada... temos que ir para trás
                     # vai partir de zero e vai até achar o que queremos
+                    flag_mesmo = False
                     bypass = 1
                     self.s_gil[self.ig].cont_itens = 0
                     self.s_gil[self.ig].pos_bytes = Const.OFFSET_MODO_FULL
@@ -1465,6 +1495,7 @@ class Gilson:
                     bypass = 0  # é a que estamos, está na sequencia crescente correta
                     self.s_gil[self.ig].chave_atual = chave  # salva a última feita ok
                     self.s_gil[self.ig].cont_itens_old = self.s_gil[self.ig].cont_itens
+                #print(f"1 chave:{chave}, chave_atual:{self.s_gil[self.ig].chave_atual}, bypass:{bypass}, cont_itens:{self.s_gil[self.ig].cont_itens}")
 
                 if self.CheckNotDinamic():
                     if self.CheckModeKV():
@@ -1492,11 +1523,11 @@ class Gilson:
 
                     if tipo1 >= Tipo1.MAX:
                         erro = Er.er_27
-                        goto_deu_erro()
+                        raise GotoErro(erro)
 
                     if tipo2 >= Tipo2.tMAX:
                         erro = Er.er_27b
-                        goto_deu_erro()
+                        raise GotoErro(erro)
 
                     if tipo1 == Tipo1.LIST:
                         vezes = struct.unpack("H", self.s_gil[self.ig].bufr[pos_bytes: pos_bytes + 2])[0]
@@ -1504,7 +1535,7 @@ class Gilson:
 
                         if vezes == 0:
                             erro = Er.er_28
-                            goto_deu_erro()
+                            raise GotoErro(erro)
 
                         if tipo2 == Tipo2.tSTRING:
                             cont_list_b = self.s_gil[self.ig].bufr[pos_bytes]
@@ -1512,7 +1543,7 @@ class Gilson:
 
                             if cont_list_b == 0:
                                 erro = Er.er_29
-                                goto_deu_erro()
+                                raise GotoErro(erro)
                     elif tipo1 == Tipo1.MTX2D:
                         cont_list_a = self.s_gil[self.ig].bufr[pos_bytes]
                         pos_bytes += 1
@@ -1523,7 +1554,7 @@ class Gilson:
 
                         if cont_list_a == 0 or cont_list_b == 0 or cont_list_step == 0:
                             erro = Er.er_30
-                            goto_deu_erro()
+                            raise GotoErro(erro)
 
                         vezes = cont_list_a * cont_list_b  # no python fizemos assim pois salva exato o que temos e não é baseado em 'cont_list_step' como no C
                     else:
@@ -1573,7 +1604,7 @@ class Gilson:
                         ...  # só vai...
                     else:
                         erro = Er.er_31
-                        goto_deu_erro()
+                        raise GotoErro(erro)
 
                     """
                     print(f"0 decode full: modo:{self.s_gil[self.ig].modo}, chave:{chave}, nome_chave:{nome_chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, "
@@ -1598,48 +1629,33 @@ class Gilson:
                             b = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + lenb]
                             self.s_gil[self.ig].pos_bytes += lenb
                             if bypass == 0:
-                                """
-                                data = np.frombuffer(b, dtype=nbytes)
-                                data = data.reshape((cont_list_a, cont_list_b))
-                                multi_data = data.tolist()
-                                """
                                 multi_data = bytes2data(b, nbytes, 1, cont_list_a, cont_list_b)
                         else:
                             lenb = vezes * nbytes2
                             b = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes:self.s_gil[self.ig].pos_bytes + lenb]
                             self.s_gil[self.ig].pos_bytes += lenb
                             if bypass == 0:
-                                """
-                                data = np.frombuffer(b, dtype=nbytes)
-                                multi_data = data.tolist()
-                                """
                                 multi_data = bytes2data(b, nbytes)
                 else:
                     if bypass == 0:
                         self.s_gil[self.ig].chaves_null += 1
                         # tem que definir o retorno de 'multi_data' e ainda saber se é lista.... 0, [], ""
                         # 255 e 255, não tem como saber que tipo era... vai ficar como None, isso é ruim!!!
-                        """
-                        if tipo1 == Tipo1.SINGLE:
-                            if tipo2 == Tipo2.tSTRING:
-                                multi_data = ""
-                            else:
-                                multi_data = 0
-                        else:
-                            multi_data = []
-                        print("aaaaaaaaaaaaaaaaaa", multi_data, tipo1, tipo2)
-                        """
 
-                        # terminada os decodes de tipos...
-                        if self.CheckNotDinamic():
-                            self.s_gil[self.ig].pos_bytes = pos_bytes  # segue o baile de onde estava...
-                        else:
-                            self.s_gil[self.ig].pos_bytes_dl = pos_bytes  # para a próxima vez...
-                            # lembrando que 's_gil[ig].pos_bytes' ja está na posição correta da sequência
+                    # terminada os decodes de tipos...
+                    if self.CheckNotDinamic():
+                        self.s_gil[self.ig].pos_bytes = pos_bytes  # segue o baile de onde estava...
+                    else:
+                        self.s_gil[self.ig].pos_bytes_dl = pos_bytes  # para a próxima vez...
+                        # lembrando que 's_gil[ig].pos_bytes' ja está na posição correta da sequência
 
+                # se veio até aqui, não é para ter erro..
                 if erro == Er.er_OK:
                     self.s_gil[self.ig].cont_itens += 1
-                    if bypass == 0:
+                    if self.CheckNotDinamic():
+                        self.s_gil[self.ig].chave_atual = chave
+
+                    if bypass == 0 and tipo_mux != Const.TIPO_GIL_NULL:
                         if vezes == 1 and tipo1 == Tipo1.SINGLE:
                             multi_data = multi_data[0]
 
@@ -1651,15 +1667,23 @@ class Gilson:
                 if bypass == 0:
                     break
 
+                # gambiii da segurança...
                 cont_loop_erro += 1
                 if cont_loop_erro > self.s_gil[self.ig].cont_itens2:
                     print("q q eh isso tcheeee!")
                     break
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
         except Exception as err:  # except ValueError:
-            #print("Erro detectado:", err)
+            #print("Errooooooooooo detectado:", err)
             if erro == Er.er_OK:
                 erro = Er.er_DESC7
-                self.s_gil[self.ig].erro = erro
+
+        self.s_gil[self.ig].erro = erro
+        if erro != Er.er_OK:
+            if Const.GIL_DEBUG_LIB:
+                print(f"DEBUG decode_base_full::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tipo1:{tipo1}, tipo2:{tipo2}, cont_list_a:{cont_list_a}, cont_list_b:{cont_list_b}, cont_list_step:{cont_list_step}")
 
         if self.CheckModeKV():
             ret = erro, nome_chave, multi_data
@@ -1719,13 +1743,13 @@ class Gilson:
                     return ret
 
                 return self.decode_base(chave, tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step)
+            else:
+                return self.decode_base_full(chave)
         except Exception as err:  # except ValueError:
-            # print("Erro detectado:", err)
+            #print("Erro detectado:", err)
             erro = Er.er_DESC14
             self.s_gil[self.ig].erro = erro
-            return erro
-        else:
-            return self.decode_base_full(chave)
+            return erro, None
 
     def decode_key(self, pack: bytes | bytearray, chave: int):
         """
@@ -1740,14 +1764,14 @@ class Gilson:
         erro, modo = self.decode_init(pack)
         if erro == 0 and modo == Modo.FULL:
             erro, valor = self.decode(chave)
-            ret = self.decode_end()  # erro, total de bytes, crc e buffer cru...
+            ret = self.decode_close()  # erro, total de bytes, crc e buffer cru...
             if erro != Er.er_OK or ret[0] != Er.er_OK:
                 if erro == Er.er_OK:
                     erro = ret[0]
         else:
             erro = Er.er_64
 
-        if GIL_DEBUG_LIB:
+        if Const.GIL_DEBUG_LIB:
             print(f"DEBUG decode_key::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}|{modo}, chave:{chave}")
 
         return erro, valor
@@ -1756,26 +1780,28 @@ class Gilson:
         # OBS: não foi testado ainda em modo KV
         erro = Er.er_OK
 
+        """
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
-            if erro != Er.er_OK:
-                if GIL_DEBUG_LIB:
-                    print(f"DEBUG decode_dl_init::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}")
             raise ValueError(f"erro encode_base:{erro}")
+        """
 
         try:
             if self.s_gil[self.ig].erro != Er.er_OK:
                 erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if self.s_gil[self.ig].tipo_dinamico == 1:
                 # ja está ativo esse modo... tem que teminar antes para iniciar um novo
                 erro = Er.er_32b
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             if chave > self.s_gil[self.ig].cont_itens2:
-                erro = Er.er_62
-                goto_deu_erro()
+                if Const.GIL_FLAG_NEW_KEY:
+                    raise GotoErro(erro)
+                else:
+                    erro = Er.er_62
+                    raise GotoErro(erro)
 
             if self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes] == Const.TIPO_GIL_LDIN:
 
@@ -1797,7 +1823,7 @@ class Gilson:
                 self.s_gil[self.ig].chave_dl = chave
             else:
                 erro = Er.er_47
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             # vamos varrer nosso header para saber onde termina para entao saber onde começa os dados de fato
             for i in range(self.s_gil[self.ig].nitens):
@@ -1810,11 +1836,11 @@ class Gilson:
 
                 if tipo1 >= Tipo1.MAX:
                     erro = Er.er_48
-                    goto_deu_erro()
+                    raise GotoErro(erro)
 
                 if tipo2 >= Tipo2.tMAX:
                     erro = Er.er_48b
-                    goto_deu_erro()
+                    raise GotoErro(erro)
 
                 if tipo1 == Tipo1.LIST:
                     vezes = struct.unpack("H", self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes: self.s_gil[self.ig].pos_bytes + 2])[0]
@@ -1822,7 +1848,7 @@ class Gilson:
 
                     if vezes == 0:
                         erro = Er.er_49
-                        goto_deu_erro()
+                        raise GotoErro(erro)
 
                     if tipo2 == Tipo2.tSTRING:
                         cont_list_b = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
@@ -1830,7 +1856,7 @@ class Gilson:
 
                         if cont_list_b == 0:
                             erro = Er.er_50
-                            goto_deu_erro()
+                            raise GotoErro(erro)
                 elif tipo1 == Tipo1.MTX2D:
                     cont_list_a = self.s_gil[self.ig].bufr[self.s_gil[self.ig].pos_bytes]
                     self.s_gil[self.ig].pos_bytes += 1
@@ -1841,23 +1867,28 @@ class Gilson:
 
                     if cont_list_a == 0 or cont_list_b == 0 or cont_list_step == 0:
                         erro = Er.er_51
-                        goto_deu_erro()
+                        raise GotoErro(erro)
 
                     vezes = cont_list_a * cont_list_b  # no python fizemos assim pois salva exato o que temos e não é baseado em 'cont_list_step' como no C
                 else:
                     vezes = 1
                     # caso seja 'tipo2==Tipo2.tSTRING': 'cont_list_b' só precisa na codificacao, agora é com base no 'len' da vez
 
-            self.s_gil[self.ig].pos_tipo_dl_end = self.s_gil[self.ig].pos_bytes  # onde começa a 'data' de fato!!!!!
+            self.s_gil[self.ig].pos_tipo_dl_close = self.s_gil[self.ig].pos_bytes  # onde começa a 'data' de fato!!!!!
 
             if erro == Er.er_OK:
                 self.s_gil[self.ig].cont_itens += 1
-
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
         except Exception as err:  # except ValueError:
             #print("Erro detectado:", err)
             if erro == Er.er_OK:
                 erro = Er.er_DESC8
-                self.s_gil[self.ig].erro = erro
+
+        self.s_gil[self.ig].erro = erro
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG decode_dl_init::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, chave:{chave}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}, pos_tipo_dl_init:{self.s_gil[self.ig].pos_tipo_dl_init}, pos_tipo_dl_close:{self.s_gil[self.ig].pos_tipo_dl_close}")
 
         return erro
 
@@ -1865,27 +1896,34 @@ class Gilson:
         erro = Er.er_OK
         multi_data = None
 
+        """
         def goto_deu_erro():
             self.s_gil[self.ig].erro = erro
             if erro != Er.er_OK:
-                if GIL_DEBUG_LIB:
+                if Const.GIL_DEBUG_LIB:
                     print(f"DEBUG decode_dl_data::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, item:{item}, chave_dl:{self.s_gil[self.ig].chave_dl}")
             #return erro, multi_data
             raise ValueError(f"erro encode_base:{erro}")
+        """
 
         try:
+            if self.s_gil[self.ig].erro != Er.er_OK:
+                erro = self.s_gil[self.ig].erro  # vamos manter sempre o mesmo erro!!!
+                raise GotoErro(erro)
+
+            # somente funciona no modo 'GIL_MODO_FULL' e 'GIL_MODO_KV'!!!!
             if self.CheckModeZIP():
                 erro = Er.er_52
-                goto_deu_erro()
+                raise GotoErro(erro)
+
+            if self.s_gil[self.ig].tipo_operacao != Const.e_OPER_DECODE:
+                erro = Er.er_OPER
+                raise GotoErro(erro)
 
             if item > self.s_gil[self.ig].nitens:
                 # quer add uma item maior do que a contagem crescente... não tem como
                 erro = Er.er_53
-                goto_deu_erro()
-
-            if self.s_gil[self.ig].tipo_operacao != Const.e_OPER_DECODE:
-                erro = Er.er_OPER
-                goto_deu_erro()
+                raise GotoErro(erro)
 
             # com base no 'item' vamos deixar o offset pronto para em 'gilson_decode_data_full_base' saber como resgatar o 'tipo1, tipo2, cont_list_a, cont_list_b, cont_list_step' do header
             if item == 0:
@@ -1897,16 +1935,21 @@ class Gilson:
 
             if erro == Er.er_OK:
                 self.s_gil[self.ig].cont_tipo_dinamico += 1
-
+        except GotoErro as e:
+            erro = e.codigo
+            #sms_erro = e.sms_codigo
         except Exception as err:  # except ValueError:
             #print("Erro detectado:", err)
             if erro == Er.er_OK:
                 erro = Er.er_DESC9
-                self.s_gil[self.ig].erro = erro
+
+        self.s_gil[self.ig].erro = erro
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG decode_dl_data::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, item:{item}, chave_dl:{self.s_gil[self.ig].chave_dl}, cont_tipo_dinamico:{self.s_gil[self.ig].cont_tipo_dinamico}")
 
         return erro, multi_data
 
-    def decode_dl_end(self):
+    def decode_dl_close(self):
         erro = Er.er_OK
 
         if self.s_gil[self.ig].tipo_dinamico == 0:
@@ -1916,9 +1959,8 @@ class Gilson:
         elif self.s_gil[self.ig].cont_tipo_dinamico != (self.s_gil[self.ig].tam_list * self.s_gil[self.ig].nitens):
             erro = Er.er_56
 
-        if erro != Er.er_OK:
-            if GIL_DEBUG_LIB:
-                print(f"DEBUG decode_dl_end::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}, tipo_dinamico:{self.s_gil[self.ig].cont_tipo_dinamico}")
+        if Const.GIL_DEBUG_LIB:
+            print(f"DEBUG decode_dl_close::: ig:{self.ig}, ERRO:{erro} modo:{self.s_gil[self.ig].modo}, tam_list:{self.s_gil[self.ig].tam_list}, nitens:{self.s_gil[self.ig].nitens}, cont_tipo_dinamico:{self.s_gil[self.ig].cont_tipo_dinamico}")
 
         self.s_gil[self.ig].tipo_dinamico = 0  # finalizando o tratar um tipo dinamico
 
@@ -2099,7 +2141,30 @@ class Gilson:
         return self.decode_base(chave, Tipo1.MTX2D, Tipo2.tFLOAT64, cont_list_a, cont_list_b, cont_list_step)
 
     def decode_valid_map(self, map_full: list | tuple, tot_chaves: int, pack: bytes | bytearray):
-        # int32_t gilson_decode_valid_map(const uint16_t map_full[][6], uint16_t tot_chaves, const uint8_t *pack);
-        # fazerrrrr
-        ...
+        erro = Er.er_OK
+
+        erro, modo = self.decode_init(pack)
+
+        if erro == Er.er_OK:
+            if self.CheckModeFULL():
+                if tot_chaves > self.s_gil[self.ig].cont_itens2 and Const.GIL_FLAG_NEW_KEY == 1:
+                    # se tudo certo o pacote é o mesmo porem uma nova versao com mais chaves... que vamos ignorar as novas
+                    tot_chaves = self.s_gil[self.ig].cont_itens2
+
+                if tot_chaves == self.s_gil[self.ig].cont_itens2:
+                    for i in range(self.s_gil[self.ig].cont_itens2):
+                        ret1 = self.decode_base(map_full[i][0], map_full[i][1], map_full[i][2], map_full[i][3], map_full[i][4], map_full[i][5])
+                    ret2 = self.decode_close()  # erro, total de bytes, crc e buffer cru...
+                    erro, pos_bytes = ret2[0], ret2[1]
+                    if pos_bytes <= 0:
+                        erro = pos_bytes
+                else:
+                    # e se if(tot_chaves > LIMIT_GIL_KEYS)  erro = erGIL_LIMKEY;
+                    erro = Er.er_66
+            else:
+                erro = Er.er_65
+
+        #self.s_gil[self.ig].clear()  # limpa para liberar pois não vamos continuar o decode...
+
+        return erro
 
